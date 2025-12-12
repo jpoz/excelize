@@ -357,3 +357,269 @@ func TestHSTACKEdgeCases(t *testing.T) {
 	assert.NoError(t, err5)
 	assert.Equal(t, "A,B,C,A2,B2,C2", result5, "Should handle 3 arrays")
 }
+
+func TestCalcTAKE(t *testing.T) {
+	cellData := [][]interface{}{
+		{"A", "B", "C", "D"},
+		{"A2", "B2", "C2", "D2"},
+		{"A3", "B3", "C3", "D3"},
+		{"A4", "B4", "C4", "D4"},
+		{"A5", "B5", "C5", "D5"},
+		{100, 200, 300, 400},
+		{110, 210, 310, 410},
+		{120, 220, 320, 420},
+	}
+	f := prepareCalcData(cellData)
+
+	// Success cases - Category 1: Basic Extraction
+	formulaList := map[string]string{
+		// Positive rows, all columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 2))":
+			"A,B,C,D,A2,B2,C2,D2",
+
+		// Negative rows, all columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, -2))":
+			"A4,B4,C4,D4,A5,B5,C5,D5",
+
+		// Positive rows, positive columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 2, 2))":
+			"A,B,A2,B2",
+
+		// Positive rows, negative columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 2, -2))":
+			"C,D,C2,D2",
+
+		// Negative rows, positive columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, -2, 2))":
+			"A4,B4,A5,B5",
+
+		// Negative rows, negative columns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, -2, -2))":
+			"C4,D4,C5,D5",
+
+		// Category 2: Overflow Scenarios
+		// Rows exceeds array size
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D3, 10))":
+			"A,B,C,D,A2,B2,C2,D2,A3,B3,C3,D3",
+
+		// Negative rows exceeds size
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D3, -10))":
+			"A,B,C,D,A2,B2,C2,D2,A3,B3,C3,D3",
+
+		// Columns exceeds array size
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D3, 2, 10))":
+			"A,B,C,D,A2,B2,C2,D2",
+
+		// Negative columns exceeds size
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D3, 2, -10))":
+			"A,B,C,D,A2,B2,C2,D2",
+
+		// Both exceed
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D3, 10, 10))":
+			"A,B,C,D,A2,B2,C2,D2,A3,B3,C3,D3",
+
+		// Single cell array overflow
+		"TEXTJOIN(\",\", TRUE, TAKE(A1, 5, 5))":
+			"A",
+
+		// Category 4: Edge Cases
+		// Single row extraction
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 1))":
+			"A,B,C,D",
+
+		// Single column extraction
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 5, 1))":
+			"A,A2,A3,A4,A5",
+
+		// Single cell result
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 1, 1))":
+			"A",
+
+		// Full array (no-op)
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 5, 4))":
+			"A,B,C,D,A2,B2,C2,D2,A3,B3,C3,D3,A4,B4,C4,D4,A5,B5,C5,D5",
+
+		// Category 5: Single Value Input
+		// Single cell as array
+		"TEXTJOIN(\",\", TRUE, TAKE(A1, 1))":
+			"A",
+
+		// Category 6: Mixed Data Types - numbers
+		"TEXTJOIN(\",\", TRUE, TAKE(A6:D8, 2, 3))":
+			"100,200,300,110,210,310",
+
+		// Extract from end with numbers
+		"TEXTJOIN(\",\", TRUE, TAKE(A6:D8, -2, -2))":
+			"310,410,320,420",
+
+		// Mix of strings and extraction patterns
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 3, 2))":
+			"A,B,A2,B2,A3,B3",
+
+		// Take one row from middle-ish (from start)
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 3))":
+			"A,B,C,D,A2,B2,C2,D2,A3,B3,C3,D3",
+
+		// Take one column from middle-ish (from end)
+		"TEXTJOIN(\",\", TRUE, TAKE(A1:D5, 5, -3))":
+			"B,C,D,B2,C2,D2,B3,C3,D3,B4,C4,D4,B5,C5,D5",
+
+		// Verify numbers work correctly
+		"TEXTJOIN(\",\", TRUE, TAKE(A6:D6, 1, 3))":
+			"100,200,300",
+
+		// Take negative from numbers
+		"TEXTJOIN(\",\", TRUE, TAKE(A6:D8, -1))":
+			"120,220,320,420",
+	}
+
+	for formula, expected := range formulaList {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "E1", formula))
+		result, err := f.CalcCellValue("Sheet1", "E1")
+		assert.NoError(t, err, formula)
+		assert.Equal(t, expected, result, formula)
+	}
+
+	// Use INDEX to test specific cell extraction
+	assert.NoError(t, f.SetCellFormula("Sheet1", "F1", "INDEX(TAKE(A1:D5, 2, 2), 1, 2)"))
+	result1, err1 := f.CalcCellValue("Sheet1", "F1")
+	assert.NoError(t, err1)
+	assert.Equal(t, "B", result1, "INDEX should extract specific cell from TAKE result")
+
+	// Test that negative indexing works correctly with INDEX
+	assert.NoError(t, f.SetCellFormula("Sheet1", "F2", "INDEX(TAKE(A1:D5, -2, -2), 1, 1)"))
+	result2, err2 := f.CalcCellValue("Sheet1", "F2")
+	assert.NoError(t, err2)
+	assert.Equal(t, "C4", result2, "First cell of TAKE with negative indices")
+
+	// Error cases - Category 7: Invalid Arguments
+	calcError := map[string][]string{
+		// No arguments
+		"TAKE()": {"#VALUE!", "TAKE requires 2 or 3 arguments, received 0"},
+
+		// Only one argument (missing rows)
+		"TAKE(A1:D5)": {"#VALUE!", "TAKE requires 2 or 3 arguments, received 1"},
+
+		// Too many arguments
+		"TAKE(A1:D5, 2, 2, 2)": {"#VALUE!", "TAKE requires 2 or 3 arguments, received 4"},
+
+		// Non-numeric rows parameter
+		"TAKE(A1:D5, \"abc\")": {"#VALUE!", "strconv.ParseFloat: parsing \"abc\": invalid syntax"},
+
+		// Category 8: Zero Count
+		// Zero rows
+		"TAKE(A1:D5, 0)": {"#CALC!", "TAKE rows parameter cannot be zero"},
+
+		// Zero columns
+		"TAKE(A1:D5, 2, 0)": {"#CALC!", "TAKE columns parameter cannot be zero"},
+	}
+
+	for formula, expected := range calcError {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "G1", formula))
+		result3, err3 := f.CalcCellValue("Sheet1", "G1")
+		assert.EqualError(t, err3, expected[1], formula)
+		assert.Equal(t, expected[0], result3, formula)
+	}
+}
+
+func TestTAKEEdgeCases(t *testing.T) {
+	// Test overflow scenarios with various dimensions
+	cellData := [][]interface{}{
+		{"R1C1", "R1C2", "R1C3"},
+		{"R2C1", "R2C2", "R2C3"},
+		{"R3C1", "R3C2", "R3C3"},
+	}
+	f := prepareCalcData(cellData)
+
+	// Overflow in both dimensions
+	formula1 := "TEXTJOIN(\",\", TRUE, TAKE(A1:C3, 100, 100))"
+	assert.NoError(t, f.SetCellFormula("Sheet1", "D1", formula1))
+	result1, err1 := f.CalcCellValue("Sheet1", "D1")
+	assert.NoError(t, err1)
+	assert.Equal(t, "R1C1,R1C2,R1C3,R2C1,R2C2,R2C3,R3C1,R3C2,R3C3", result1, "Should return entire array when overflow")
+
+	// Negative overflow in both dimensions
+	formula2 := "TEXTJOIN(\",\", TRUE, TAKE(A1:C3, -100, -100))"
+	assert.NoError(t, f.SetCellFormula("Sheet1", "D2", formula2))
+	result2, err2 := f.CalcCellValue("Sheet1", "D2")
+	assert.NoError(t, err2)
+	assert.Equal(t, "R1C1,R1C2,R1C3,R2C1,R2C2,R2C3,R3C1,R3C2,R3C3", result2, "Negative overflow should return entire array")
+
+	// Single cell array
+	cellData2 := [][]interface{}{
+		{"Single"},
+	}
+	f2 := prepareCalcData(cellData2)
+
+	formula3 := "TEXTJOIN(\",\", TRUE, TAKE(A1, 1))"
+	assert.NoError(t, f2.SetCellFormula("Sheet1", "B1", formula3))
+	result3, err3 := f2.CalcCellValue("Sheet1", "B1")
+	assert.NoError(t, err3)
+	assert.Equal(t, "Single", result3, "Single cell should work")
+
+	formula4 := "TEXTJOIN(\",\", TRUE, TAKE(A1, 1, 1))"
+	assert.NoError(t, f2.SetCellFormula("Sheet1", "B2", formula4))
+	result4, err4 := f2.CalcCellValue("Sheet1", "B2")
+	assert.NoError(t, err4)
+	assert.Equal(t, "Single", result4, "Single cell with explicit columns")
+
+	// Full array extraction (exactly matching dimensions)
+	formula5 := "TEXTJOIN(\",\", TRUE, TAKE(A1:C3, 3, 3))"
+	assert.NoError(t, f.SetCellFormula("Sheet1", "D3", formula5))
+	result5, err5 := f.CalcCellValue("Sheet1", "D3")
+	assert.NoError(t, err5)
+	assert.Equal(t, "R1C1,R1C2,R1C3,R2C1,R2C2,R2C3,R3C1,R3C2,R3C3", result5, "Exact dimensions should work")
+
+	// Test that empty cells are preserved
+	cellData3 := [][]interface{}{
+		{"A", nil, "C"},
+		{"D", nil, "F"},
+		{"G", nil, "I"},
+	}
+	f3 := prepareCalcData(cellData3)
+
+	// Check that middle column preserves empty cells
+	assert.NoError(t, f3.SetCellFormula("Sheet1", "D1", "INDEX(TAKE(A1:C3, 2, 3), 1, 2)"))
+	result6, err6 := f3.CalcCellValue("Sheet1", "D1")
+	assert.NoError(t, err6)
+	assert.Equal(t, "", result6, "Empty cells should remain empty")
+
+	assert.NoError(t, f3.SetCellFormula("Sheet1", "D2", "INDEX(TAKE(A1:C3, 2, 3), 2, 2)"))
+	result7, err7 := f3.CalcCellValue("Sheet1", "D2")
+	assert.NoError(t, err7)
+	assert.Equal(t, "", result7, "Empty cells in row 2 should remain empty")
+
+	// Test with numeric array
+	cellData4 := [][]interface{}{
+		{1, 2, 3, 4, 5},
+		{10, 20, 30, 40, 50},
+		{100, 200, 300, 400, 500},
+	}
+	f4 := prepareCalcData(cellData4)
+
+	formula8 := "TEXTJOIN(\",\", TRUE, TAKE(A1:E3, 2, 3))"
+	assert.NoError(t, f4.SetCellFormula("Sheet1", "F1", formula8))
+	result8, err8 := f4.CalcCellValue("Sheet1", "F1")
+	assert.NoError(t, err8)
+	assert.Equal(t, "1,2,3,10,20,30", result8, "Numeric arrays should work")
+
+	formula9 := "TEXTJOIN(\",\", TRUE, TAKE(A1:E3, -1, -2))"
+	assert.NoError(t, f4.SetCellFormula("Sheet1", "F2", formula9))
+	result9, err9 := f4.CalcCellValue("Sheet1", "F2")
+	assert.NoError(t, err9)
+	assert.Equal(t, "400,500", result9, "Negative indices with numbers")
+
+	// Test exact row count
+	formula10 := "TEXTJOIN(\",\", TRUE, TAKE(A1:E3, 3))"
+	assert.NoError(t, f4.SetCellFormula("Sheet1", "F3", formula10))
+	result10, err10 := f4.CalcCellValue("Sheet1", "F3")
+	assert.NoError(t, err10)
+	assert.Equal(t, "1,2,3,4,5,10,20,30,40,50,100,200,300,400,500", result10, "Take all rows")
+
+	// Test exact column count
+	formula11 := "TEXTJOIN(\",\", TRUE, TAKE(A1:E3, 3, 5))"
+	assert.NoError(t, f4.SetCellFormula("Sheet1", "F4", formula11))
+	result11, err11 := f4.CalcCellValue("Sheet1", "F4")
+	assert.NoError(t, err11)
+	assert.Equal(t, "1,2,3,4,5,10,20,30,40,50,100,200,300,400,500", result11, "Take all columns explicitly")
+}

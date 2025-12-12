@@ -788,6 +788,7 @@ type formulaFuncs struct {
 //	T.INV
 //	T.INV.2T
 //	T.TEST
+//	TAKE
 //	TAN
 //	TANH
 //	TBILLEQ

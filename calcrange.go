@@ -391,3 +391,143 @@ func getHstackArrays(argsList *list.List) ([]hstackArray, *formulaArg) {
 
 	return arrays, nil
 }
+
+// TAKE function returns a specified number of contiguous rows or columns from
+// the start or end of an array. The syntax of the function is:
+//
+//	TAKE(array, rows, [columns])
+func (fn *formulaFuncs) TAKE(argsList *list.List) formulaArg {
+	// Phase 1: Argument Validation
+	argsLen := argsList.Len()
+	if argsLen < 2 || argsLen > 3 {
+		msg := fmt.Sprintf("TAKE requires 2 or 3 arguments, received %d", argsLen)
+		return newErrorFormulaArg(formulaErrorVALUE, msg)
+	}
+
+	// Phase 2: Parse Array Argument
+	firstArg := argsList.Front()
+	arrayArg := firstArg.Value.(formulaArg)
+
+	// Check for errors in array argument
+	if arrayArg.Type == ArgError {
+		return arrayArg
+	}
+
+	// Convert to flat list
+	arrayData := arrayArg.ToList()
+	if len(arrayData) == 0 {
+		return newErrorFormulaArg(formulaErrorVALUE, "TAKE array argument is empty")
+	}
+
+	// Check for errors in the data
+	if arrayData[0].Type == ArgError {
+		return arrayData[0]
+	}
+
+	// Calculate array dimensions
+	tempList := list.New()
+	tempList.PushBack(arrayArg)
+	rmin, rmax := calcColsRowsMinMax(false, tempList)
+	cmin, cmax := calcColsRowsMinMax(true, tempList)
+	arrayCols, arrayRows := cmax-cmin+1, rmax-rmin+1
+
+	// Phase 3: Parse Rows Parameter
+	secondArg := firstArg.Next()
+	rowsArg := secondArg.Value.(formulaArg)
+	rowsNum := rowsArg.ToNumber()
+
+	// Check for errors
+	if rowsNum.Type == ArgError {
+		return rowsNum
+	}
+
+	// Check for zero (Excel returns #CALC! for zero)
+	if rowsNum.Number == 0 {
+		return newErrorFormulaArg(formulaErrorCALC, "TAKE rows parameter cannot be zero")
+	}
+
+	// Calculate actual rows and start position
+	var actualRows, startRow int
+	if rowsNum.Number > 0 {
+		// Take from start
+		actualRows = int(rowsNum.Number)
+		if actualRows > arrayRows {
+			actualRows = arrayRows // Cap at available
+		}
+		startRow = 0
+	} else {
+		// Take from end
+		actualRows = int(-rowsNum.Number)
+		if actualRows > arrayRows {
+			actualRows = arrayRows // Cap at available
+		}
+		startRow = arrayRows - actualRows
+	}
+
+	// Phase 4: Parse Optional Columns Parameter
+	var actualCols, startCol int
+	if argsLen >= 3 {
+		thirdArg := secondArg.Next()
+		colsArg := thirdArg.Value.(formulaArg)
+
+		// Check for empty parameter (ArgEmpty type means take all columns)
+		if colsArg.Type == ArgEmpty {
+			actualCols = arrayCols
+			startCol = 0
+		} else {
+			colsNum := colsArg.ToNumber()
+
+			// Check for errors
+			if colsNum.Type == ArgError {
+				return colsNum
+			}
+
+			// Check for zero
+			if colsNum.Number == 0 {
+				return newErrorFormulaArg(formulaErrorCALC, "TAKE columns parameter cannot be zero")
+			}
+
+			// Calculate actual columns and start position
+			if colsNum.Number > 0 {
+				// Take from start
+				actualCols = int(colsNum.Number)
+				if actualCols > arrayCols {
+					actualCols = arrayCols // Cap at available
+				}
+				startCol = 0
+			} else {
+				// Take from end
+				actualCols = int(-colsNum.Number)
+				if actualCols > arrayCols {
+					actualCols = arrayCols // Cap at available
+				}
+				startCol = arrayCols - actualCols
+			}
+		}
+	} else {
+		// Omitted: take all columns
+		actualCols = arrayCols
+		startCol = 0
+	}
+
+	// Phase 5: Validate Result Dimensions
+	if actualRows <= 0 || actualCols <= 0 {
+		return newErrorFormulaArg(formulaErrorVALUE, "TAKE result dimensions are invalid")
+	}
+
+	// Phase 6: Extract Subset Using Row-Major Indexing
+	result := make([][]formulaArg, actualRows)
+	for rowIdx := 0; rowIdx < actualRows; rowIdx++ {
+		result[rowIdx] = make([]formulaArg, actualCols)
+		srcRow := startRow + rowIdx
+
+		for colIdx := 0; colIdx < actualCols; colIdx++ {
+			srcCol := startCol + colIdx
+			// Row-major indexing: flatIndex = row * totalCols + col
+			flatIndex := srcRow*arrayCols + srcCol
+			result[rowIdx][colIdx] = arrayData[flatIndex]
+		}
+	}
+
+	return newMatrixFormulaArg(result)
+}
