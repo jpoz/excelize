@@ -288,3 +288,106 @@ func compareSortbyValues(a, b formulaArg) int {
 		return 0
 	}
 }
+
+// hstackArray represents a single array argument for HSTACK with its dimensions.
+type hstackArray struct {
+	data []formulaArg // flat list of values
+	cols int          // column count
+	rows int          // row count
+}
+
+// HSTACK function appends arrays horizontally (column-wise). The syntax of the
+// function is:
+//
+//	HSTACK(array1, [array2], ...)
+func (fn *formulaFuncs) HSTACK(argsList *list.List) formulaArg {
+	// Parse and validate all array arguments
+	arrays, errArg := getHstackArrays(argsList)
+	if errArg != nil {
+		return *errArg
+	}
+
+	// Calculate result dimensions
+	maxRows := 0
+	totalCols := 0
+	for _, arr := range arrays {
+		if arr.rows > maxRows {
+			maxRows = arr.rows
+		}
+		totalCols += arr.cols
+	}
+
+	// Build result matrix row by row
+	result := make([][]formulaArg, maxRows)
+	for rowIdx := 0; rowIdx < maxRows; rowIdx++ {
+		result[rowIdx] = make([]formulaArg, 0, totalCols)
+
+		// Append columns from each array
+		for _, arr := range arrays {
+			if rowIdx < arr.rows {
+				// Extract actual row data
+				startIdx := rowIdx * arr.cols
+				endIdx := startIdx + arr.cols
+				result[rowIdx] = append(result[rowIdx], arr.data[startIdx:endIdx]...)
+			} else {
+				// Pad with #N/A errors
+				for col := 0; col < arr.cols; col++ {
+					result[rowIdx] = append(result[rowIdx],
+						newErrorFormulaArg(formulaErrorNA, formulaErrorNA))
+				}
+			}
+		}
+	}
+
+	return newMatrixFormulaArg(result)
+}
+
+// getHstackArrays parses and validates the arguments for the HSTACK function.
+func getHstackArrays(argsList *list.List) ([]hstackArray, *formulaArg) {
+	// Validate at least 1 argument
+	if argsList.Len() == 0 {
+		errArg := newErrorFormulaArg(formulaErrorVALUE, "HSTACK requires at least 1 argument")
+		return nil, &errArg
+	}
+
+	arrays := make([]hstackArray, 0, argsList.Len())
+
+	// Parse each argument
+	for arg := argsList.Front(); arg != nil; arg = arg.Next() {
+		fa := arg.Value.(formulaArg)
+
+		// Check for errors in the argument
+		if fa.Type == ArgError {
+			return nil, &fa
+		}
+
+		// Convert to list
+		data := fa.ToList()
+
+		// Skip empty arrays (contribute 0 columns)
+		if len(data) == 0 {
+			continue
+		}
+
+		// Calculate dimensions
+		tempList := list.New()
+		tempList.PushBack(fa)
+		rmin, rmax := calcColsRowsMinMax(false, tempList)
+		cmin, cmax := calcColsRowsMinMax(true, tempList)
+		cols, rows := cmax-cmin+1, rmax-rmin+1
+
+		arrays = append(arrays, hstackArray{
+			data: data,
+			cols: cols,
+			rows: rows,
+		})
+	}
+
+	// Check if all arrays were empty
+	if len(arrays) == 0 {
+		errArg := newErrorFormulaArg(formulaErrorVALUE, "HSTACK requires at least one non-empty array")
+		return nil, &errArg
+	}
+
+	return arrays, nil
+}

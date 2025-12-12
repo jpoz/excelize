@@ -216,3 +216,144 @@ func TestSORTBYEdgeCases(t *testing.T) {
 	assert.NoError(t, err3)
 	assert.Equal(t, "Bob,Charlie,Alice", result3, "Second key determines order when first is equal")
 }
+
+func TestCalcHSTACK(t *testing.T) {
+	cellData := [][]interface{}{
+		{"A", "B", "C", "D", "E"},
+		{"A2", "B2", "C2", "D2", "E2"},
+		{"A3", "B3", "C3", "D3", "E3"},
+		{"A4", "B4", "C4", "D4", "E4"},
+		{"A5", "B5", "C5", "D5", "E5"},
+		{100, 200, 300, 400, 500},
+	}
+	f := prepareCalcData(cellData)
+
+	// Success cases
+	formulaList := map[string]string{
+		// Two arrays of same height (3 rows)
+		"TEXTJOIN(\",\", TRUE, HSTACK(A1:A3, B1:B3))":
+			"A,B,A2,B2,A3,B3",
+
+		// Single array (no-op)
+		"TEXTJOIN(\",\", TRUE, HSTACK(A1:B3))":
+			"A,B,A2,B2,A3,B3",
+
+		// Numeric values
+		"TEXTJOIN(\",\", TRUE, HSTACK(A6:B6, D6:E6))":
+			"100,200,400,500",
+
+		// Multiple columns
+		"TEXTJOIN(\",\", TRUE, HSTACK(A1:B2, C1:D2))":
+			"A,B,C,D,A2,B2,C2,D2",
+	}
+
+	for formula, expected := range formulaList {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "G1", formula))
+		result, err := f.CalcCellValue("Sheet1", "G1")
+		assert.NoError(t, err, formula)
+		assert.Equal(t, expected, result, formula)
+	}
+
+	// Test padding with INDEX (TEXTJOIN ignores #N/A)
+	// HSTACK(A1:A5, B1:B2) should pad B's rows 3-5 with #N/A
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H1", "INDEX(HSTACK(A1:A5, B1:B2), 3, 2)"))
+	result, err := f.CalcCellValue("Sheet1", "H1")
+	assert.Error(t, err) // #N/A is an error type
+	assert.Equal(t, "#N/A", result, "Row 3, column 2 should be #N/A (padding)")
+
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H2", "INDEX(HSTACK(A1:A5, B1:B2), 4, 2)"))
+	result2, err2 := f.CalcCellValue("Sheet1", "H2")
+	assert.Error(t, err2) // #N/A is an error type
+	assert.Equal(t, "#N/A", result2, "Row 4, column 2 should be #N/A (padding)")
+
+	// Test single value + array
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H3", "INDEX(HSTACK(100, A1:A3), 1, 1)"))
+	result3, err3 := f.CalcCellValue("Sheet1", "H3")
+	assert.NoError(t, err3)
+	assert.Equal(t, "100", result3, "Single value in first column")
+
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H4", "INDEX(HSTACK(100, A1:A3), 1, 2)"))
+	result4, err4 := f.CalcCellValue("Sheet1", "H4")
+	assert.NoError(t, err4)
+	assert.Equal(t, "A", result4, "Array value in second column")
+
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H5", "INDEX(HSTACK(100, A1:A3), 2, 1)"))
+	result5, err5 := f.CalcCellValue("Sheet1", "H5")
+	assert.Error(t, err5) // #N/A is an error type
+	assert.Equal(t, "#N/A", result5, "Single value padded for row 2")
+
+	// Error cases
+	calcError := map[string][]string{
+		// No arguments
+		"HSTACK()": {"#VALUE!", "HSTACK requires at least 1 argument"},
+	}
+
+	for formula, expected := range calcError {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "I1", formula))
+		result6, err6 := f.CalcCellValue("Sheet1", "I1")
+		assert.EqualError(t, err6, expected[1], formula)
+		assert.Equal(t, expected[0], result6, formula)
+	}
+}
+
+func TestHSTACKEdgeCases(t *testing.T) {
+	// Test with all single values (1×1 arrays)
+	cellData := [][]interface{}{
+		{10, 20, 30, 40},
+	}
+	f := prepareCalcData(cellData)
+
+	formula := "TEXTJOIN(\",\", TRUE, HSTACK(A1, B1, C1, D1))"
+	assert.NoError(t, f.SetCellFormula("Sheet1", "E1", formula))
+	result, err := f.CalcCellValue("Sheet1", "E1")
+	assert.NoError(t, err)
+	assert.Equal(t, "10,20,30,40", result, "Single values should concatenate horizontally")
+
+	// Test maximum padding scenario - check with INDEX since TEXTJOIN skips #N/A
+	cellData2 := [][]interface{}{
+		{"R1C1", "Short1"},
+		{"R2C1", "Short2"},
+		{"R3C1", nil},
+		{"R4C1", nil},
+		{"R5C1", nil},
+	}
+	f2 := prepareCalcData(cellData2)
+
+	// Check row 3, column 2 should be #N/A (padding)
+	assert.NoError(t, f2.SetCellFormula("Sheet1", "C1", "INDEX(HSTACK(A1:A5, B1:B2), 3, 2)"))
+	result2, err2 := f2.CalcCellValue("Sheet1", "C1")
+	assert.Error(t, err2) // #N/A is an error type
+	assert.Equal(t, "#N/A", result2, "Should pad short array with #N/A")
+
+	// Check row 5, column 2 should also be #N/A (padding)
+	assert.NoError(t, f2.SetCellFormula("Sheet1", "C2", "INDEX(HSTACK(A1:A5, B1:B2), 5, 2)"))
+	result3, err3 := f2.CalcCellValue("Sheet1", "C2")
+	assert.Error(t, err3) // #N/A is an error type
+	assert.Equal(t, "#N/A", result3, "Should pad short array with #N/A")
+
+	// Test that empty cells are preserved (not converted to #N/A)
+	cellData3 := [][]interface{}{
+		{"A", nil, "C"},
+		{"D", nil, "F"},
+	}
+	f3 := prepareCalcData(cellData3)
+
+	// Check that the middle column has empty cells, not #N/A
+	assert.NoError(t, f3.SetCellFormula("Sheet1", "D1", "INDEX(HSTACK(A1:C2, D1:D2), 1, 2)"))
+	result4, err4 := f3.CalcCellValue("Sheet1", "D1")
+	assert.NoError(t, err4)
+	assert.Equal(t, "", result4, "Empty cells should remain empty, not become #N/A")
+
+	// Test combining 3+ arrays
+	cellData4 := [][]interface{}{
+		{"A", "B", "C"},
+		{"A2", "B2", "C2"},
+	}
+	f4 := prepareCalcData(cellData4)
+
+	formula4 := "TEXTJOIN(\",\", TRUE, HSTACK(A1:A2, B1:B2, C1:C2))"
+	assert.NoError(t, f4.SetCellFormula("Sheet1", "D1", formula4))
+	result5, err5 := f4.CalcCellValue("Sheet1", "D1")
+	assert.NoError(t, err5)
+	assert.Equal(t, "A,B,C,A2,B2,C2", result5, "Should handle 3 arrays")
+}

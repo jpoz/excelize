@@ -570,6 +570,7 @@ type formulaFuncs struct {
 //	HEX2DEC
 //	HEX2OCT
 //	HLOOKUP
+//	HSTACK
 //	HOUR
 //	HYPERLINK
 //	HYPGEOM.DIST
