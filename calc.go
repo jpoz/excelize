@@ -244,6 +244,45 @@ type calcContext struct {
 	maxCalcIterations uint
 	iterations        map[string]uint
 	iterationsCache   map[string]formulaArg
+	variableScopes    []map[string]formulaArg // Stack of variable scopes for LET function
+}
+
+// pushLetScope creates a new variable scope for LET evaluation.
+func (ctx *calcContext) pushLetScope() {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	ctx.variableScopes = append(ctx.variableScopes, make(map[string]formulaArg))
+}
+
+// popLetScope removes the innermost variable scope.
+func (ctx *calcContext) popLetScope() {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	if len(ctx.variableScopes) > 0 {
+		ctx.variableScopes = ctx.variableScopes[:len(ctx.variableScopes)-1]
+	}
+}
+
+// lookupLetVariable searches for a variable in the scope stack.
+// Returns (value, found) - searches from innermost to outermost scope.
+func (ctx *calcContext) lookupLetVariable(name string) (formulaArg, bool) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	for i := len(ctx.variableScopes) - 1; i >= 0; i-- {
+		if value, exists := ctx.variableScopes[i][name]; exists {
+			return value, true
+		}
+	}
+	return formulaArg{}, false
+}
+
+// setLetVariable stores a variable in the current (innermost) scope.
+func (ctx *calcContext) setLetVariable(name string, value formulaArg) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	if len(ctx.variableScopes) > 0 {
+		ctx.variableScopes[len(ctx.variableScopes)-1][name] = value
+	}
 }
 
 // cellRef defines the structure of a cell reference.
@@ -1007,6 +1046,15 @@ func (f *File) evalInfixExp(ctx *calcContext, sheet, cell string, tokens []efp.T
 				inArrayRow, formulaArrayRow = true, []formulaArg{}
 				continue
 			}
+			// Special handling for LET function - needs incremental argument evaluation
+			if strings.ToUpper(token.TValue) == "LET" {
+				result, err := f.evalLetFunction(ctx, sheet, cell, tokens, &i)
+				if err != nil {
+					return result, err
+				}
+				opdStack.Push(result)
+				continue
+			}
 			opfStack.Push(token)
 			argsStack.Push(list.New().Init())
 			opftStack.Push(token) // to know which operators belong to a function use the function as a separator
@@ -1023,6 +1071,17 @@ func (f *File) evalInfixExp(ctx *calcContext, sheet, cell string, tokens []efp.T
 			// current token is args or range, skip next token, order required: parse reference first
 			if token.TSubType == efp.TokenSubTypeRange {
 				if opftStack.Peek().(efp.Token) != opfStack.Peek().(efp.Token) {
+					// Check if this is a LET variable first
+					if ctx != nil {
+						if value, found := ctx.lookupLetVariable(token.TValue); found {
+							opfdStack.Push(value)
+							continue
+						}
+						// If we're in a LET scope and this looks like a variable name, treat as undefined variable
+						if len(ctx.variableScopes) > 0 && isValidLetVariableName(token.TValue) {
+							return newErrorFormulaArg(formulaErrorNAME, formulaErrorNAME), nil
+						}
+					}
 					refTo := f.getDefinedNameRefTo(token.TValue, sheet)
 					if refTo != "" {
 						token.TValue = refTo
@@ -1036,6 +1095,21 @@ func (f *File) evalInfixExp(ctx *calcContext, sheet, cell string, tokens []efp.T
 					continue
 				}
 				if nextToken.TType == efp.TokenTypeArgument || nextToken.TType == efp.TokenTypeFunction {
+					// Check if this is a LET variable first
+					if ctx != nil {
+						if value, found := ctx.lookupLetVariable(token.TValue); found {
+							if nextToken.TType == efp.TokenTypeArgument && !opfdStack.Empty() {
+								opfdStack.Push(value)
+								continue
+							}
+							argsStack.Peek().(*list.List).PushBack(value)
+							continue
+						}
+						// If we're in a LET scope and this looks like a variable name, treat as undefined variable
+						if len(ctx.variableScopes) > 0 && isValidLetVariableName(token.TValue) {
+							return newErrorFormulaArg(formulaErrorNAME, formulaErrorNAME), nil
+						}
+					}
 					// parse reference: reference or range at here
 					refTo := f.getDefinedNameRefTo(token.TValue, sheet)
 					if refTo != "" {
@@ -1106,7 +1180,147 @@ func (f *File) evalInfixExp(ctx *calcContext, sheet, cell string, tokens []efp.T
 	if opdStack.Len() == 0 {
 		return newEmptyFormulaArg(), ErrInvalidFormula
 	}
-	return opdStack.Peek().(formulaArg), err
+	result := opdStack.Peek().(formulaArg)
+	// If the result is an error formulaArg, return it with nil error
+	// The error should be in the result string, not as a Go error
+	if result.Type == ArgError {
+		return result, nil
+	}
+	return result, err
+}
+
+// skipToClosingParen skips tokens until the matching closing parenthesis
+func skipToClosingParen(tokens []efp.Token, tokenIndex *int) {
+	depth := 1
+	for *tokenIndex < len(tokens) && depth > 0 {
+		if tokens[*tokenIndex].TSubType == efp.TokenSubTypeStart {
+			depth++
+		} else if tokens[*tokenIndex].TSubType == efp.TokenSubTypeStop {
+			depth--
+		}
+		*tokenIndex++
+	}
+}
+
+// evalLetFunction handles special evaluation of LET function arguments.
+// It processes name/value pairs incrementally, storing variables as it goes,
+// then evaluates the final calculation with all variables in scope.
+func (f *File) evalLetFunction(ctx *calcContext, sheet, cell string, tokens []efp.Token, tokenIndex *int) (formulaArg, error) {
+	// Push a new variable scope
+	ctx.pushLetScope()
+	defer ctx.popLetScope()
+
+	// Skip past the LET function name token (it's at tokenIndex, which is the function start token)
+	// The opening parenthesis is implicit in the function start token
+	*tokenIndex++
+
+	argCount := 0
+	parenDepth := 1
+	currentExprTokens := []efp.Token{}
+	varNames := []string{}
+
+	// Collect all arguments by parsing tokens manually
+	for *tokenIndex < len(tokens) && parenDepth > 0 {
+		token := tokens[*tokenIndex]
+
+		// Track parenthesis depth to handle nested expressions
+		if token.TSubType == efp.TokenSubTypeStart {
+			parenDepth++
+			currentExprTokens = append(currentExprTokens, token)
+			*tokenIndex++
+			continue
+		}
+
+		if token.TSubType == efp.TokenSubTypeStop {
+			parenDepth--
+			if parenDepth == 0 {
+				// End of LET function - validate and evaluate final calculation
+
+				// We need at least 2 arguments total (1 name/value pair + 1 calculation)
+				// argCount tracks how many comma-separated arguments we've seen
+				// The final calculation is not yet counted in argCount
+				totalArgs := argCount + 1
+
+				// Validate argument count
+				if totalArgs < 3 {
+					return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+				}
+				if totalArgs%2 == 0 {
+					return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+				}
+
+				// Validate that we have an equal number of names and values
+				// argCount/2 gives us the number of name/value pairs
+				if len(varNames) != argCount/2 {
+					return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+				}
+
+				// Evaluate final calculation
+				if len(currentExprTokens) == 0 {
+					return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+				}
+				result, err := f.evalInfixExp(ctx, sheet, cell, currentExprTokens)
+				if err != nil {
+					return result, err
+				}
+				return result, nil
+			}
+			currentExprTokens = append(currentExprTokens, token)
+			*tokenIndex++
+			continue
+		}
+
+		// Argument separator at top level - process the argument
+		if token.TType == efp.TokenTypeArgument && parenDepth == 1 {
+			// Evaluate current expression
+			if len(currentExprTokens) == 0 {
+				skipToClosingParen(tokens, tokenIndex)
+				return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+			}
+
+			result, err := f.evalInfixExp(ctx, sheet, cell, currentExprTokens)
+			if err != nil {
+				return result, err
+			}
+
+			argCount++
+			if argCount%2 == 1 {
+				// Odd argument - variable name
+				if result.Type == ArgError {
+					return result, nil
+				}
+				if result.Type != ArgString {
+					skipToClosingParen(tokens, tokenIndex)
+					return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
+				}
+				varName := result.String
+				// Validate variable name immediately
+				if !isValidLetVariableName(varName) {
+					skipToClosingParen(tokens, tokenIndex)
+					return newErrorFormulaArg(formulaErrorNAME, formulaErrorNAME), nil
+				}
+				varNames = append(varNames, varName)
+			} else {
+				// Even argument - variable value
+				if result.Type == ArgError {
+					return result, nil
+				}
+				// Store the variable
+				varName := varNames[len(varNames)-1]
+				ctx.setLetVariable(varName, result)
+			}
+
+			currentExprTokens = []efp.Token{}
+			*tokenIndex++
+			continue
+		}
+
+		// Regular token - add to current expression
+		currentExprTokens = append(currentExprTokens, token)
+		*tokenIndex++
+	}
+
+	return newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE), nil
 }
 
 // evalInfixExpFunc evaluate formula function in the infix expression.
@@ -1457,6 +1671,40 @@ func isOperand(token efp.Token) bool {
 	return token.TType == efp.TokenTypeOperand && (token.TSubType == efp.TokenSubTypeNumber || token.TSubType == efp.TokenSubTypeText || token.TSubType == efp.TokenSubTypeLogical)
 }
 
+// isValidLetVariableName validates a variable name for the LET function.
+// Rules:
+// - Must start with a letter (A-Z, a-z)
+// - Cannot be a cell reference (A1, BC123, etc.)
+// - Cannot be a reserved name (TRUE, FALSE)
+func isValidLetVariableName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+
+	// Must start with a letter
+	firstChar := name[0]
+	if !((firstChar >= 'A' && firstChar <= 'Z') || (firstChar >= 'a' && firstChar <= 'z')) {
+		return false
+	}
+
+	// Reject if it looks like a cell reference
+	if _, _, err := CellNameToCoordinates(name); err == nil {
+		return false
+	}
+
+	// Reserved keywords
+	reserved := map[string]bool{
+		"TRUE":  true,
+		"FALSE": true,
+		"NULL":  true,
+	}
+	if reserved[strings.ToUpper(name)] {
+		return false
+	}
+
+	return true
+}
+
 // tokenToFormulaArg create a formula argument by given token.
 func tokenToFormulaArg(token efp.Token) formulaArg {
 	switch token.TSubType {
@@ -1488,12 +1736,30 @@ func formulaArgToToken(arg formulaArg) efp.Token {
 func (f *File) parseToken(ctx *calcContext, sheet string, token efp.Token, opdStack, optStack *Stack) error {
 	// parse reference: must reference at here
 	if token.TSubType == efp.TokenSubTypeRange {
+		// Check if this is a LET variable first
+		if ctx != nil {
+			if value, found := ctx.lookupLetVariable(token.TValue); found {
+				opdStack.Push(value)
+				return nil
+			}
+			// If we're in a LET scope and this looks like a variable name (not a cell reference),
+			// treat it as an undefined variable error instead of trying to parse as a reference
+			if len(ctx.variableScopes) > 0 && isValidLetVariableName(token.TValue) {
+				opdStack.Push(newErrorFormulaArg(formulaErrorNAME, formulaErrorNAME))
+				return nil
+			}
+		}
 		refTo := f.getDefinedNameRefTo(token.TValue, sheet)
 		if refTo != "" {
 			token.TValue = refTo
 		}
 		result, err := f.parseReference(ctx, sheet, token.TValue)
 		if err != nil {
+			// If in LET scope, push error onto stack; otherwise return error as before
+			if ctx != nil && len(ctx.variableScopes) > 0 {
+				opdStack.Push(result)
+				return nil
+			}
 			return errors.New(formulaErrorNAME)
 		}
 		token = formulaArgToToken(result)

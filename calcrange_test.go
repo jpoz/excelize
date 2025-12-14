@@ -623,3 +623,103 @@ func TestTAKEEdgeCases(t *testing.T) {
 	assert.NoError(t, err11)
 	assert.Equal(t, "1,2,3,4,5,10,20,30,40,50,100,200,300,400,500", result11, "Take all columns explicitly")
 }
+
+func TestCalcLET(t *testing.T) {
+	f := NewFile()
+	defer func() {
+		assert.NoError(t, f.Close())
+	}()
+
+	// Set up test data
+	assert.NoError(t, f.SetCellValue("Sheet1", "A1", 10))
+	assert.NoError(t, f.SetCellValue("Sheet1", "A2", 20))
+	assert.NoError(t, f.SetCellValue("Sheet1", "B1", 5))
+
+	// Success cases
+	tests := map[string]string{
+		// Basic usage
+		`=LET("x", 5, x)`:                                       "5",
+		`=LET("x", 5, x+1)`:                                     "6",
+		`=LET("x", 5, x*2)`:                                     "10",
+		`=LET("x", 5.5, x)`:                                     "5.5",
+		`=LET("x", -5, x)`:                                      "-5",
+
+		// Multiple variables
+		`=LET("x", 5, "y", 10, x+y)`:                           "15",
+		`=LET("x", 5, "y", x*2, y+3)`:                          "13",
+		`=LET("x", 5, "y", x*2, "z", y+3, z*2)`:                "26",
+		`=LET("a", 2, "b", 3, "c", a*b, c+a+b)`:                "11",
+
+		// With cell references
+		`=LET("x", A1, x*2)`:                                    "20",
+		`=LET("x", A1, "y", B1, x+y)`:                          "15",
+		`=LET("x", A1, "y", A2, x+y)`:                          "30",
+
+		// Complex expressions
+		`=LET("price", 100, "tax", price*0.2, price+tax)`:      "120",
+		`=LET("x", 3, "y", 4, "z", x*x+y*y, z)`:                "25",
+
+		// Nested formulas
+		`=LET("x", 5, SUM(x, x, x))`:                           "15",
+		`=LET("x", 5, IF(x>3, "yes", "no"))`:                   "yes",
+		`=LET("x", 10, IF(x<5, "small", "large"))`:             "large",
+		`=LET("x", 5, "y", 10, SUM(x, y))`:                     "15",
+
+		// Variable shadowing (inner scope overrides)
+		`=LET("x", 5, LET("x", 10, x))`:                        "10",
+		`=LET("x", 5, "y", LET("x", 10, x), y)`:                "10",
+
+		// Using variables multiple times
+		`=LET("x", 5, x+x+x)`:                                  "15",
+		`=LET("x", 3, x*x)`:                                    "9",
+	}
+
+	for formula, expected := range tests {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "C1", formula))
+		result, err := f.CalcCellValue("Sheet1", "C1")
+		assert.NoError(t, err, formula)
+		assert.Equal(t, expected, result, formula)
+	}
+
+	// Error cases
+	errorTests := map[string]string{
+		// Too few arguments
+		`=LET("x", 5)`:              formulaErrorVALUE,
+		`=LET("x")`:                 formulaErrorVALUE,
+		`=LET()`:                    formulaErrorVALUE,
+
+		// Even number of arguments
+		`=LET("x", 5, "y", 10)`:    formulaErrorVALUE,
+		`=LET("x", 5, "y", 10, "z", 15)`: formulaErrorVALUE,
+
+		// Invalid variable names - starts with number
+		`=LET("123", 5, 123)`:      formulaErrorNAME,
+		`=LET("1x", 5, 1x)`:        formulaErrorNAME,
+
+		// Invalid variable names - cell reference
+		`=LET("A1", 5, A1)`:        formulaErrorNAME,
+		`=LET("B2", 10, B2)`:       formulaErrorNAME,
+
+		// Invalid variable names - reserved word
+		`=LET("TRUE", 5, TRUE)`:    formulaErrorNAME,
+		`=LET("FALSE", 5, FALSE)`:  formulaErrorNAME,
+
+		// Non-string variable name
+		`=LET(A1, 5, A1)`:          formulaErrorVALUE,
+		`=LET(5, 10, x)`:           formulaErrorVALUE,
+
+		// Undefined variable
+		`=LET("x", 5, y)`:          formulaErrorNAME,
+		`=LET("x", 5, "y", 10, z)`: formulaErrorNAME,
+
+		// Empty variable name
+		`=LET("", 5, x)`:           formulaErrorNAME,
+	}
+
+	for formula, expectedError := range errorTests {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "C1", formula))
+		result, err := f.CalcCellValue("Sheet1", "C1")
+		assert.NoError(t, err, formula)
+		assert.Contains(t, result, expectedError, formula)
+	}
+}

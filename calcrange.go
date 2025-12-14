@@ -531,3 +531,86 @@ func (fn *formulaFuncs) TAKE(argsList *list.List) formulaArg {
 
 	return newMatrixFormulaArg(result)
 }
+
+// LET function assigns names to calculation results within a formula.
+// The syntax of the function is:
+//
+//	LET(name1, value1, [name2, value2, ...], calculation)
+//
+// The function allows storing intermediate calculations and improves formula
+// readability and performance by evaluating expressions once.
+//
+// Example: =LET("x", 5, "y", x*2, "z", y+3, z*2) returns 26
+func (fn *formulaFuncs) LET(argsList *list.List) formulaArg {
+	argsLen := argsList.Len()
+
+	// Validation: minimum 3 arguments (name, value, calculation)
+	if argsLen < 3 {
+		return newErrorFormulaArg(formulaErrorVALUE,
+			"LET requires at least 3 arguments: name, value, and calculation")
+	}
+
+	// Validation: must be odd number of arguments (name/value pairs + calculation)
+	if argsLen%2 == 0 {
+		return newErrorFormulaArg(formulaErrorVALUE,
+			"LET requires an odd number of arguments (name/value pairs plus calculation)")
+	}
+
+	// Validation: maximum 255 arguments (127 name/value pairs + calculation)
+	if argsLen > 255 {
+		return newErrorFormulaArg(formulaErrorVALUE,
+			"LET supports at most 127 name/value pairs")
+	}
+
+	// Create a new variable scope for this LET evaluation
+	fn.ctx.pushLetScope()
+	defer fn.ctx.popLetScope()
+
+	// Process name/value pairs
+	arg := argsList.Front()
+	pairCount := (argsLen - 1) / 2
+
+	for i := 0; i < pairCount; i++ {
+		// Get variable name (must be string)
+		nameArg := arg.Value.(formulaArg)
+		if nameArg.Type == ArgError {
+			return nameArg
+		}
+		if nameArg.Type != ArgString {
+			return newErrorFormulaArg(formulaErrorVALUE,
+				"LET variable names must be text")
+		}
+
+		varName := nameArg.String
+
+		// Validate variable name
+		if !isValidLetVariableName(varName) {
+			return newErrorFormulaArg(formulaErrorNAME,
+				fmt.Sprintf("Invalid variable name: %s", varName))
+		}
+
+		// Get variable value
+		arg = arg.Next()
+		valueArg := arg.Value.(formulaArg)
+		if valueArg.Type == ArgError {
+			return valueArg
+		}
+
+		// Store the variable in the current scope
+		fn.ctx.setLetVariable(varName, valueArg)
+
+		// Move to next pair
+		arg = arg.Next()
+	}
+
+	// The final argument is the calculation expression
+	// At this point, all variables are defined and will be resolved
+	// during the calculation evaluation
+	calculationArg := arg.Value.(formulaArg)
+	if calculationArg.Type == ArgError {
+		return calculationArg
+	}
+
+	// Return the calculation result
+	return calculationArg
+}
