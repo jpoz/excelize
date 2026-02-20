@@ -1267,6 +1267,205 @@ func calcSplice(rOpd, lOpd formulaArg, opdStack *Stack) error {
 	return nil
 }
 
+// operandToMatrix converts a formulaArg to a matrix. Scalars become a 1x1
+// matrix. Returns an error if the matrix is empty.
+func operandToMatrix(opd formulaArg) ([][]formulaArg, error) {
+	if opd.Type == ArgMatrix {
+		if len(opd.Matrix) == 0 || len(opd.Matrix[0]) == 0 {
+			return nil, errors.New(formulaErrorVALUE)
+		}
+		return opd.Matrix, nil
+	}
+	return [][]formulaArg{{opd}}, nil
+}
+
+// calculateBroadcastDimensions returns the output dimensions for element-wise
+// array operations using NumPy-style broadcasting rules.
+func calculateBroadcastDimensions(rRows, rCols, lRows, lCols int) (int, int) {
+	outRows := rRows
+	if lRows > outRows {
+		outRows = lRows
+	}
+	outCols := rCols
+	if lCols > outCols {
+		outCols = lCols
+	}
+	return outRows, outCols
+}
+
+// validateBroadcastDimensions checks whether two operand dimensions are
+// compatible for broadcasting to the given output dimensions. Only scalar
+// (1x1) operands can be broadcast; row/column vector broadcasting is not
+// supported.
+func validateBroadcastDimensions(rRows, rCols, lRows, lCols, outRows, outCols int) bool {
+	rIsScalar := rRows == 1 && rCols == 1
+	lIsScalar := lRows == 1 && lCols == 1
+	rMatch := rRows == outRows && rCols == outCols
+	lMatch := lRows == outRows && lCols == outCols
+	return (rMatch || rIsScalar) && (lMatch || lIsScalar)
+}
+
+// calculateBroadcastIndices returns the source indices for the right and left
+// operands at output position (i, j), applying broadcasting for dimensions
+// that are 1.
+func calculateBroadcastIndices(i, j, rRows, rCols, lRows, lCols int) (int, int, int, int) {
+	rIdx, rJdx := i, j
+	if rRows == 1 {
+		rIdx = 0
+	}
+	if rCols == 1 {
+		rJdx = 0
+	}
+	lIdx, lJdx := i, j
+	if lRows == 1 {
+		lIdx = 0
+	}
+	if lCols == 1 {
+		lJdx = 0
+	}
+	return rIdx, rJdx, lIdx, lJdx
+}
+
+// compareTypedValues compares two formula arguments and returns -1, 0, or 1.
+// Numbers sort before strings. For unsupported types the result is 0.
+func compareTypedValues(lCell, rCell formulaArg) int {
+	if lCell.Type == ArgNumber && rCell.Type == ArgNumber {
+		switch {
+		case lCell.Number < rCell.Number:
+			return -1
+		case lCell.Number > rCell.Number:
+			return 1
+		}
+		return 0
+	}
+	if lCell.Type == ArgString && rCell.Type == ArgString {
+		return strings.Compare(lCell.Value(), rCell.Value())
+	}
+	if lCell.Type == ArgNumber && rCell.Type == ArgString {
+		return -1
+	}
+	if lCell.Type == ArgString && rCell.Type == ArgNumber {
+		return 1
+	}
+	return 0
+}
+
+// performArrayComparison performs an element-wise comparison of two operands
+// with broadcasting support, pushing the resulting boolean matrix onto the
+// stack.
+func performArrayComparison(rOpd, lOpd formulaArg, opdStack *Stack, cmp func(lCell, rCell formulaArg) bool) error {
+	rMatrix, err := operandToMatrix(rOpd)
+	if err != nil {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	lMatrix, err := operandToMatrix(lOpd)
+	if err != nil {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	rRows, rCols := len(rMatrix), len(rMatrix[0])
+	lRows, lCols := len(lMatrix), len(lMatrix[0])
+	outRows, outCols := calculateBroadcastDimensions(rRows, rCols, lRows, lCols)
+	if !validateBroadcastDimensions(rRows, rCols, lRows, lCols, outRows, outCols) {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	result := make([][]formulaArg, outRows)
+	for i := 0; i < outRows; i++ {
+		result[i] = make([]formulaArg, outCols)
+		for j := 0; j < outCols; j++ {
+			rIdx, rJdx, lIdx, lJdx := calculateBroadcastIndices(i, j, rRows, rCols, lRows, lCols)
+			result[i][j] = newBoolFormulaArg(cmp(lMatrix[lIdx][lJdx], rMatrix[rIdx][rJdx]))
+		}
+	}
+	opdStack.Push(newMatrixFormulaArg(result))
+	return nil
+}
+
+// calcEqArray evaluate element-wise equal operations on arrays.
+func calcEqArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return lCell.Value() == rCell.Value()
+	})
+}
+
+// calcNEqArray evaluate element-wise not-equal operations on arrays.
+func calcNEqArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return lCell.Value() != rCell.Value()
+	})
+}
+
+// calcLArray evaluate element-wise less-than operations on arrays.
+func calcLArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return compareTypedValues(lCell, rCell) < 0
+	})
+}
+
+// calcLeArray evaluate element-wise less-than-or-equal operations on arrays.
+func calcLeArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return compareTypedValues(lCell, rCell) <= 0
+	})
+}
+
+// calcGArray evaluate element-wise greater-than operations on arrays.
+func calcGArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return compareTypedValues(lCell, rCell) > 0
+	})
+}
+
+// calcGeArray evaluate element-wise greater-than-or-equal operations on arrays.
+func calcGeArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	return performArrayComparison(rOpd, lOpd, opdStack, func(lCell, rCell formulaArg) bool {
+		return compareTypedValues(lCell, rCell) >= 0
+	})
+}
+
+// calcMultiplyArray evaluate element-wise multiplication on arrays.
+func calcMultiplyArray(rOpd, lOpd formulaArg, opdStack *Stack) error {
+	rMatrix, err := operandToMatrix(rOpd)
+	if err != nil {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	lMatrix, err := operandToMatrix(lOpd)
+	if err != nil {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	rRows, rCols := len(rMatrix), len(rMatrix[0])
+	lRows, lCols := len(lMatrix), len(lMatrix[0])
+	outRows, outCols := calculateBroadcastDimensions(rRows, rCols, lRows, lCols)
+	if !validateBroadcastDimensions(rRows, rCols, lRows, lCols, outRows, outCols) {
+		opdStack.Push(newErrorFormulaArg(formulaErrorVALUE, formulaErrorVALUE))
+		return nil
+	}
+	result := make([][]formulaArg, outRows)
+	for i := 0; i < outRows; i++ {
+		result[i] = make([]formulaArg, outCols)
+		for j := 0; j < outCols; j++ {
+			rIdx, rJdx, lIdx, lJdx := calculateBroadcastIndices(i, j, rRows, rCols, lRows, lCols)
+			lVal := lMatrix[lIdx][lJdx].ToNumber()
+			if lVal.Type != ArgNumber {
+				opdStack.Push(newErrorFormulaArg(lVal.Value(), lVal.Value()))
+				return nil
+			}
+			rVal := rMatrix[rIdx][rJdx].ToNumber()
+			if rVal.Type != ArgNumber {
+				opdStack.Push(newErrorFormulaArg(rVal.Value(), rVal.Value()))
+				return nil
+			}
+			result[i][j] = newNumberFormulaArg(lVal.Number * rVal.Number)
+		}
+	}
+	opdStack.Push(newMatrixFormulaArg(result))
+	return nil
+}
+
 // calcAdd evaluate addition arithmetic operations.
 func calcAdd(rOpd, lOpd formulaArg, opdStack *Stack) error {
 	lOpdVal := lOpd.ToNumber()
@@ -1383,6 +1582,20 @@ func calculate(opdStack *Stack, opt efp.Token) error {
 		}
 		if lOpd.Type == ArgError {
 			return errors.New(lOpd.Value())
+		}
+		if rOpd.Type == ArgMatrix || lOpd.Type == ArgMatrix {
+			tokenCalcArrayFunc := map[string]func(rOpd, lOpd formulaArg, opdStack *Stack) error{
+				"*":  calcMultiplyArray,
+				"=":  calcEqArray,
+				"<>": calcNEqArray,
+				"<":  calcLArray,
+				"<=": calcLeArray,
+				">":  calcGArray,
+				">=": calcGeArray,
+			}
+			if arrayFn, ok := tokenCalcArrayFunc[opt.TValue]; ok {
+				return arrayFn(rOpd, lOpd, opdStack)
+			}
 		}
 		return fn(rOpd, lOpd, opdStack)
 	}

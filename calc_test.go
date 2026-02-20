@@ -5129,6 +5129,87 @@ func TestCalcAVERAGEIF(t *testing.T) {
 	}
 }
 
+func TestCalcCOUNTIFWildcards(t *testing.T) {
+	f := prepareCalcData([][]interface{}{
+		{"apple"},
+		{"application"},
+		{"app"},
+		{"banana"},
+		{"a.b"},
+		{"a+b"},
+		{"a(b)"},
+		{"a[b]"},
+		{"a^b"},
+		{"a$b"},
+		{"a|b"},
+		{"axb"},
+	})
+	for formula, expected := range map[string]string{
+		// Wildcard * matches zero or more characters
+		`COUNTIF(A1:A12,"app*")`:   "3",
+		`COUNTIF(A1:A12,"*ana*")`:  "1",
+		`COUNTIF(A1:A12,"*")`:      "12",
+		// Wildcard ? matches exactly one character
+		`COUNTIF(A1:A12,"ap?")`:    "1",
+		`COUNTIF(A1:A12,"a?b")`:    "6",
+		`COUNTIF(A1:A12,"???")`:    "7",
+		// Regex metacharacters treated as literals
+		`COUNTIF(A1:A12,"a.b")`:    "1",
+		`COUNTIF(A1:A12,"a+b")`:    "1",
+		`COUNTIF(A1:A12,"a(b)")`:   "1",
+		`COUNTIF(A1:A12,"a[b]")`:   "1",
+		`COUNTIF(A1:A12,"a^b")`:    "1",
+		`COUNTIF(A1:A12,"a$b")`:    "1",
+		`COUNTIF(A1:A12,"a|b")`:    "1",
+		// Anchored matching: partial matches should not count
+		`COUNTIF(A1:A12,"app")`:    "1",
+		`COUNTIF(A1:A12,"apple")`:  "1",
+		`COUNTIF(A1:A12,"ban")`:    "0",
+	} {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "B1", formula))
+		result, err := f.CalcCellValue("Sheet1", "B1")
+		assert.NoError(t, err, formula)
+		assert.Equal(t, expected, result, formula)
+	}
+}
+
+func TestCalcAVERAGEIFWildcards(t *testing.T) {
+	f := prepareCalcData([][]interface{}{
+		{"apple", 100},
+		{"application", 200},
+		{"app", 300},
+		{"banana", 400},
+		{"a.b", 500},
+		{"a+b", 600},
+		{"a(b)", 700},
+		{"axb", 800},
+	})
+	for formula, expected := range map[string]string{
+		// Wildcard * matches zero or more characters
+		`AVERAGEIF(A1:A8,"app*",B1:B8)`:  "200",
+		`AVERAGEIF(A1:A8,"*ana*",B1:B8)`: "400",
+		// Wildcard ? matches exactly one character
+		`AVERAGEIF(A1:A8,"a?b",B1:B8)`:   "633.333333333333",
+		// Regex metacharacters treated as literals
+		`AVERAGEIF(A1:A8,"a.b",B1:B8)`:   "500",
+		`AVERAGEIF(A1:A8,"a+b",B1:B8)`:   "600",
+		`AVERAGEIF(A1:A8,"a(b)",B1:B8)`:   "700",
+		// Anchored matching: partial matches should not count
+		`AVERAGEIF(A1:A8,"app",B1:B8)`:   "300",
+		`AVERAGEIF(A1:A8,"ban",B1:B8)`:   "#DIV/0!",
+	} {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "C1", formula))
+		result, err := f.CalcCellValue("Sheet1", "C1")
+		if expected == "#DIV/0!" {
+			assert.Equal(t, expected, result, formula)
+			assert.EqualError(t, err, "#DIV/0!", formula)
+		} else {
+			assert.NoError(t, err, formula)
+			assert.Equal(t, expected, result, formula)
+		}
+	}
+}
+
 func TestCalcCOVAR(t *testing.T) {
 	cellData := [][]interface{}{
 		{"array1", "array2"},
