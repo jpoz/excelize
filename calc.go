@@ -1856,12 +1856,14 @@ func formulaCriteriaParser(exp formulaArg) *formulaCriteria {
 			return fc
 		}
 	}
-	if strings.Contains(val, "?") {
-		val = strings.ReplaceAll(val, "?", ".")
-	}
-	if strings.Contains(val, "*") {
-		val = strings.ReplaceAll(val, "*", ".*")
-	}
+	// Replace Excel wildcards with placeholders before escaping regex metacharacters
+	val = strings.ReplaceAll(val, "*", "\x00STAR\x00")
+	val = strings.ReplaceAll(val, "?", "\x00QMARK\x00")
+	// Escape regex special characters (e.g., ".", "+", "(", etc.)
+	val = regexp.QuoteMeta(val)
+	// Restore Excel wildcards as regex equivalents
+	val = strings.ReplaceAll(val, "\x00STAR\x00", ".*")
+	val = strings.ReplaceAll(val, "\x00QMARK\x00", ".")
 	fc.Type, fc.Condition = criteriaRegexp, newStringFormulaArg(val)
 	if num := fc.Condition.ToNumber(); num.Type == ArgNumber {
 		fc.Condition = num
@@ -1888,7 +1890,8 @@ func formulaCriteriaEval(val formulaArg, criteria *formulaCriteria) (result bool
 			}
 		}
 	case criteriaRegexp:
-		return regexp.MatchString(criteria.Condition.Value(), val.Value())
+		// Anchor pattern for exact full-string matching (Excel SUMIF/COUNTIF behavior)
+		return regexp.MatchString("^"+criteria.Condition.Value()+"$", val.Value())
 	}
 	return
 }
