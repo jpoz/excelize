@@ -1856,13 +1856,18 @@ func formulaCriteriaParser(exp formulaArg) *formulaCriteria {
 			return fc
 		}
 	}
+	hasWildcard := strings.ContainsAny(val, "?*")
 	if strings.Contains(val, "?") {
 		val = strings.ReplaceAll(val, "?", ".")
 	}
 	if strings.Contains(val, "*") {
 		val = strings.ReplaceAll(val, "*", ".*")
 	}
-	fc.Type, fc.Condition = criteriaRegexp, newStringFormulaArg("^"+val+"$")
+	if hasWildcard {
+		fc.Type, fc.Condition = criteriaRegexp, newStringFormulaArg("^"+val+"$")
+	} else {
+		fc.Type, fc.Condition = criteriaEq, newStringFormulaArg(val)
+	}
 	if num := fc.Condition.ToNumber(); num.Type == ArgNumber {
 		fc.Condition = num
 	}
