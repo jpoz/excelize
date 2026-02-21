@@ -24,6 +24,9 @@ import (
 	"golang.org/x/net/html/charset"
 )
 
+// MacintoshCyrillicCharset is a test helper containing invalid XML bytes.
+var MacintoshCyrillicCharset = []byte{0x8F, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2, 0x20, 0xEC, 0xE8, 0xF0}
+
 func TestOpenFile(t *testing.T) {
 	// Test update the spreadsheet file
 	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
@@ -251,8 +254,8 @@ func TestCharsetTranscoder(t *testing.T) {
 func TestOpenReader(t *testing.T) {
 	_, err := OpenReader(strings.NewReader(""))
 	assert.EqualError(t, err, zip.ErrFormat.Error())
-	_, err = OpenReader(bytes.NewReader(oleIdentifier), Options{Password: "password", UnzipXMLSizeLimit: UnzipSizeLimit + 1})
-	assert.EqualError(t, err, ErrWorkbookFileFormat.Error())
+	_, err = OpenReader(bytes.NewReader(MacintoshCyrillicCharset))
+	assert.Error(t, err)
 
 	// Prepare unusual workbook, made the specified internal XML parts missing
 	// or contain unsupported charset
@@ -305,24 +308,8 @@ func TestOpenReader(t *testing.T) {
 	_, err = OpenFile(filepath.Join("test", "Book1.xlsx"), Options{UnzipSizeLimit: 100})
 	assert.EqualError(t, err, newUnzipSizeLimitError(100).Error())
 
-	// Test open password protected spreadsheet created by Microsoft Office Excel 2010
-	f, err := OpenFile(filepath.Join("test", "encryptSHA1.xlsx"), Options{Password: "password"})
-	assert.NoError(t, err)
-	val, err := f.GetCellValue("Sheet1", "A1")
-	assert.NoError(t, err)
-	assert.Equal(t, "SECRET", val)
-	assert.NoError(t, f.Close())
-
-	// Test open password protected spreadsheet created by LibreOffice 7.0.0.3
-	f, err = OpenFile(filepath.Join("test", "encryptAES.xlsx"), Options{Password: "password"})
-	assert.NoError(t, err)
-	val, err = f.GetCellValue("Sheet1", "A1")
-	assert.NoError(t, err)
-	assert.Equal(t, "SECRET", val)
-	assert.NoError(t, f.Close())
-
 	// Test open spreadsheet with invalid options
-	_, err = OpenReader(bytes.NewReader(oleIdentifier), Options{UnzipSizeLimit: 1, UnzipXMLSizeLimit: 2})
+	_, err = OpenReader(bytes.NewReader(MacintoshCyrillicCharset), Options{UnzipSizeLimit: 1, UnzipXMLSizeLimit: 2})
 	assert.EqualError(t, err, ErrOptionsUnzipSizeLimit.Error())
 
 	// Test unexpected EOF
@@ -397,13 +384,6 @@ func TestNewFile(t *testing.T) {
 	assert.NoError(t, f.SetCellInt("Sheet2", "A23", 56))
 	assert.NoError(t, f.SetCellStr("Sheet1", "B20", "42"))
 	f.SetActiveSheet(0)
-
-	// Test add picture to sheet with scaling and positioning
-	assert.NoError(t, f.AddPicture("Sheet1", "H2", filepath.Join("test", "images", "excel.gif"),
-		&GraphicOptions{ScaleX: 0.5, ScaleY: 0.5, Positioning: "absolute"}))
-
-	// Test add picture to worksheet without options
-	assert.NoError(t, f.AddPicture("Sheet1", "C2", filepath.Join("test", "images", "excel.png"), nil))
 
 	assert.NoError(t, f.SaveAs(filepath.Join("test", "TestNewFile.xlsx")))
 	assert.NoError(t, f.Save())
@@ -518,40 +498,6 @@ func TestGetCellHyperLink(t *testing.T) {
 	// Test get cell hyperlink with invalid sheet name
 	_, _, err = f.GetCellHyperLink("Sheet:1", "A1")
 	assert.EqualError(t, err, ErrSheetNameInvalid.Error())
-}
-
-func TestSetSheetBackground(t *testing.T) {
-	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
-	assert.NoError(t, err)
-	assert.NoError(t, f.SetSheetBackground("Sheet2", filepath.Join("test", "images", "background.jpg")))
-	assert.NoError(t, f.SetSheetBackground("Sheet2", filepath.Join("test", "images", "background.jpg")))
-	assert.NoError(t, f.SaveAs(filepath.Join("test", "TestSetSheetBackground.xlsx")))
-	assert.NoError(t, f.Close())
-}
-
-func TestSetSheetBackgroundErrors(t *testing.T) {
-	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
-	assert.NoError(t, err)
-
-	err = f.SetSheetBackground("Sheet2", filepath.Join("test", "not_exists", "not_exists.png"))
-	if assert.Error(t, err) {
-		assert.True(t, os.IsNotExist(err), "Expected os.IsNotExists(err) == true")
-	}
-
-	err = f.SetSheetBackground("Sheet2", filepath.Join("test", "Book1.xlsx"))
-	assert.EqualError(t, err, ErrImgExt.Error())
-	// Test set sheet background on not exist worksheet
-	err = f.SetSheetBackground("SheetN", filepath.Join("test", "images", "background.jpg"))
-	assert.EqualError(t, err, "sheet SheetN does not exist")
-	// Test set sheet background with invalid sheet name
-	assert.EqualError(t, f.SetSheetBackground("Sheet:1", filepath.Join("test", "images", "background.jpg")), ErrSheetNameInvalid.Error())
-	assert.NoError(t, f.Close())
-
-	// Test set sheet background with unsupported charset content types
-	f = NewFile()
-	f.ContentTypes = nil
-	f.Pkg.Store(defaultXMLPathContentTypes, MacintoshCyrillicCharset)
-	assert.EqualError(t, f.SetSheetBackground("Sheet1", filepath.Join("test", "images", "background.jpg")), "XML syntax error on line 1: invalid UTF-8")
 }
 
 // TestWriteArrayFormula tests the extended options of SetCellFormula by writing
@@ -1016,7 +962,6 @@ func TestSetDeleteSheet(t *testing.T) {
 		f, err := prepareTestBook4()
 		assert.NoError(t, err)
 		assert.NoError(t, f.DeleteSheet("Sheet1"))
-		assert.NoError(t, f.AddComment("Sheet1", Comment{Cell: "A1", Author: "Excelize", Paragraph: []RichTextRun{{Text: "Excelize: ", Font: &Font{Bold: true}}, {Text: "This is a comment."}}}))
 		assert.NoError(t, f.SaveAs(filepath.Join("test", "TestSetDeleteSheet.TestBook4.xlsx")))
 	})
 }
@@ -1057,11 +1002,6 @@ func TestCopySheetError(t *testing.T) {
 	assert.EqualError(t, f.copySheet(-1, -2), ErrSheetNameBlank.Error())
 	assert.EqualError(t, f.CopySheet(-1, -2), ErrSheetIdx.Error())
 	assert.NoError(t, f.SaveAs(filepath.Join("test", "TestCopySheetError.xlsx")))
-}
-
-func TestGetSheetComments(t *testing.T) {
-	f := NewFile()
-	assert.Empty(t, f.getSheetComments("sheet0"))
 }
 
 func TestGetActiveSheetIndex(t *testing.T) {
@@ -1531,24 +1471,6 @@ func TestSetDefaultTimeStyle(t *testing.T) {
 	assert.EqualError(t, f.setDefaultTimeStyle("Sheet1", "", 42), newCellNameToCoordinatesError("", newInvalidCellNameError("")).Error())
 }
 
-func TestAddVBAProject(t *testing.T) {
-	f := NewFile()
-	file, err := os.ReadFile(filepath.Join("test", "Book1.xlsx"))
-	assert.NoError(t, err)
-	assert.NoError(t, f.SetSheetProps("Sheet1", &SheetPropsOptions{CodeName: stringPtr("Sheet1")}))
-	assert.EqualError(t, f.AddVBAProject(file), ErrAddVBAProject.Error())
-	file, err = os.ReadFile(filepath.Join("test", "vbaProject.bin"))
-	assert.NoError(t, err)
-	assert.NoError(t, f.AddVBAProject(file))
-	// Test add VBA project twice
-	assert.NoError(t, f.AddVBAProject(file))
-	assert.NoError(t, f.SaveAs(filepath.Join("test", "TestAddVBAProject.xlsm")))
-	// Test add VBA with unsupported charset workbook relationships
-	f.Relationships.Delete(defaultXMLPathWorkbookRels)
-	f.Pkg.Store(defaultXMLPathWorkbookRels, MacintoshCyrillicCharset)
-	assert.EqualError(t, f.AddVBAProject(file), "XML syntax error on line 1: invalid UTF-8")
-}
-
 func TestContentTypesReader(t *testing.T) {
 	// Test unsupported charset
 	f := NewFile()
@@ -1623,34 +1545,6 @@ func prepareTestBook1() (*File, error) {
 		return nil, err
 	}
 
-	if err = f.AddPicture("Sheet2", "I9", filepath.Join("test", "images", "excel.jpg"),
-		&GraphicOptions{OffsetX: 140, OffsetY: 120, Hyperlink: "#Sheet2!D8", HyperlinkType: "Location"}); err != nil {
-		return nil, err
-	}
-
-	// Test add picture to worksheet with offset, external hyperlink and positioning
-	if err := f.AddPicture("Sheet1", "F21", filepath.Join("test", "images", "excel.png"),
-		&GraphicOptions{
-			OffsetX:       10,
-			OffsetY:       10,
-			Hyperlink:     "https://github.com/xuri/excelize",
-			HyperlinkType: "External",
-			Positioning:   "oneCell",
-		},
-	); err != nil {
-		return nil, err
-	}
-
-	file, err := os.ReadFile(filepath.Join("test", "images", "excel.jpg"))
-	if err != nil {
-		return nil, err
-	}
-
-	err = f.AddPictureFromBytes("Sheet1", "Q1", &Picture{Extension: ".jpg", File: file, Format: &GraphicOptions{AltText: "Excel Logo"}})
-	if err != nil {
-		return nil, err
-	}
-
 	return f, nil
 }
 
@@ -1669,13 +1563,6 @@ func prepareTestBook3() (*File, error) {
 		return nil, err
 	}
 	f.SetActiveSheet(0)
-	if err := f.AddPicture("Sheet1", "H2", filepath.Join("test", "images", "excel.gif"),
-		&GraphicOptions{ScaleX: 0.5, ScaleY: 0.5, Positioning: "absolute"}); err != nil {
-		return nil, err
-	}
-	if err := f.AddPicture("Sheet1", "C2", filepath.Join("test", "images", "excel.png"), nil); err != nil {
-		return nil, err
-	}
 	return f, nil
 }
 

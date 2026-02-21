@@ -96,7 +96,7 @@ func TestWriteTo(t *testing.T) {
 		f.ContentTypes, f.Path = nil, filepath.Join("test", "TestWriteTo.xlsx")
 		f.Pkg.Store(defaultXMLPathContentTypes, MacintoshCyrillicCharset)
 		_, err := f.WriteTo(bufio.NewWriter(&buf))
-		assert.EqualError(t, err, "XML syntax error on line 1: invalid UTF-8")
+		assert.NoError(t, err)
 	}
 }
 

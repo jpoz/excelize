@@ -62,6 +62,29 @@ type xlsxT struct {
 	Val     string   `xml:",chardata"`
 }
 
+// attrValInt directly maps the val element with int data type as an attribute.
+type attrValInt struct {
+	Val *int `xml:"val,attr"`
+}
+
+// attrValFloat directly maps the val element with float64 data type as an
+// attribute.
+type attrValFloat struct {
+	Val *float64 `xml:"val,attr"`
+}
+
+// attrValBool directly maps the val element with boolean data type as an
+// attribute.
+type attrValBool struct {
+	Val *bool `xml:"val,attr"`
+}
+
+// attrValString directly maps the val element with string data type as an
+// attribute.
+type attrValString struct {
+	Val *string `xml:"val,attr"`
+}
+
 // xlsxRPr (Run Properties) specifies a set of run properties which shall be
 // applied to the contents of the parent run after all style formatting has been
 // applied to the text. These properties are defined as direct formatting, since
@@ -83,6 +106,13 @@ type xlsxRPr struct {
 	U         *attrValString `xml:"u"`
 	VertAlign *attrValString `xml:"vertAlign"`
 	Scheme    *attrValString `xml:"scheme"`
+}
+
+// xlsxPhoneticRun directly maps the rPh element.
+type xlsxPhoneticRun struct {
+	Sb uint32 `xml:"sb,attr"`
+	Eb uint32 `xml:"eb,attr"`
+	T  string `xml:"t"`
 }
 
 // RichTextRun directly maps the settings of the rich text run.

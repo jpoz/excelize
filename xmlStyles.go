@@ -260,7 +260,7 @@ type xlsxDxf struct {
 	Alignment  *xlsxAlignment      `xml:"alignment"`
 	Border     *xlsxBorder         `xml:"border"`
 	Protection *xlsxProtection     `xml:"protection"`
-	ExtLst     *xlsxPositiveSize2D `xml:"extLst"`
+	ExtLst     *xlsxInnerXML `xml:"extLst"`
 }
 
 // xlsxTableStyles directly maps the tableStyles element. This element

@@ -43,25 +43,20 @@ type File struct {
 	xmlAttr          sync.Map
 	calcCache        sync.Map
 	formulaArgCache  sync.Map
-	CalcChain        *xlsxCalcChain
-	CharsetReader    func(charset string, input io.Reader) (rdr io.Reader, err error)
-	Comments         map[string]*xlsxComments
-	ContentTypes     *xlsxTypes
-	DecodeVMLDrawing map[string]*decodeVmlDrawing
-	DecodeCellImages *decodeCellImages
-	Drawings         sync.Map
-	Path             string
-	Pkg              sync.Map
-	Relationships    sync.Map
-	SharedStrings    *xlsxSST
-	Sheet            sync.Map
-	SheetCount       int
-	Styles           *xlsxStyleSheet
-	Theme            *decodeTheme
-	VMLDrawing       map[string]*vmlDrawing
-	VolatileDeps     *xlsxVolTypes
-	WorkBook         *xlsxWorkbook
-	ZipWriter        func(io.Writer) ZipWriter
+	CalcChain     *xlsxCalcChain
+	CharsetReader func(charset string, input io.Reader) (rdr io.Reader, err error)
+	ContentTypes  *xlsxTypes
+	Path          string
+	Pkg           sync.Map
+	Relationships sync.Map
+	SharedStrings *xlsxSST
+	Sheet         sync.Map
+	SheetCount    int
+	Styles        *xlsxStyleSheet
+	Theme         *decodeTheme
+	VolatileDeps  *xlsxVolTypes
+	WorkBook      *xlsxWorkbook
+	ZipWriter     func(io.Writer) ZipWriter
 }
 
 // ZipWriter defines an interface for writing files to a ZIP archive. It
@@ -154,12 +149,8 @@ func newFile() *File {
 		checked:          sync.Map{},
 		sheetMap:         make(map[string]string),
 		tempFiles:        sync.Map{},
-		Comments:         make(map[string]*xlsxComments),
-		Drawings:         sync.Map{},
 		sharedStringsMap: make(map[string]int),
 		Sheet:            sync.Map{},
-		DecodeVMLDrawing: make(map[string]*decodeVmlDrawing),
-		VMLDrawing:       make(map[string]*vmlDrawing),
 		Relationships:    sync.Map{},
 		CharsetReader:    charset.NewReaderLabel,
 		ZipWriter:        func(w io.Writer) ZipWriter { return zip.NewWriter(w) },
@@ -199,16 +190,8 @@ func OpenReader(r io.Reader, opts ...Options) (*File, error) {
 	if err = f.checkOpenReaderOptions(); err != nil {
 		return nil, err
 	}
-	if bytes.Contains(b, oleIdentifier) {
-		if b, err = Decrypt(b, f.options); err != nil {
-			return nil, ErrWorkbookFileFormat
-		}
-	}
 	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		if len(f.options.Password) > 0 {
-			return nil, ErrWorkbookPassword
-		}
 		return nil, err
 	}
 	file, sheetCount, err := f.ReadZipReader(zr)
@@ -524,95 +507,6 @@ func (f *File) UpdateLinkedValue() error {
 		}
 	}
 	return nil
-}
-
-// AddVBAProject provides the method to add vbaProject.bin file which contains
-// functions and/or macros. The file extension should be XLSM or XLTM. For
-// example:
-//
-//	codeName := "Sheet1"
-//	if err := f.SetSheetProps("Sheet1", &excelize.SheetPropsOptions{
-//	    CodeName: &codeName,
-//	}); err != nil {
-//	    fmt.Println(err)
-//	    return
-//	}
-//	file, err := os.ReadFile("vbaProject.bin")
-//	if err != nil {
-//	    fmt.Println(err)
-//	    return
-//	}
-//	if err := f.AddVBAProject(file); err != nil {
-//	    fmt.Println(err)
-//	    return
-//	}
-//	if err := f.SaveAs("macros.xlsm"); err != nil {
-//	    fmt.Println(err)
-//	    return
-//	}
-func (f *File) AddVBAProject(file []byte) error {
-	var err error
-	// Check vbaProject.bin exists first.
-	if !bytes.Contains(file, oleIdentifier) {
-		return ErrAddVBAProject
-	}
-	rels, err := f.relsReader(f.getWorkbookRelsPath())
-	if err != nil {
-		return err
-	}
-	rels.mu.Lock()
-	defer rels.mu.Unlock()
-	var rID int
-	var ok bool
-	for _, rel := range rels.Relationships {
-		if rel.Target == "vbaProject.bin" && rel.Type == SourceRelationshipVBAProject {
-			ok = true
-			continue
-		}
-		t, _ := strconv.Atoi(strings.TrimPrefix(rel.ID, "rId"))
-		if t > rID {
-			rID = t
-		}
-	}
-	rID++
-	if !ok {
-		rels.Relationships = append(rels.Relationships, xlsxRelationship{
-			ID:     "rId" + strconv.Itoa(rID),
-			Target: "vbaProject.bin",
-			Type:   SourceRelationshipVBAProject,
-		})
-	}
-	f.Pkg.Store("xl/vbaProject.bin", file)
-	return err
-}
-
-// setContentTypePartProjectExtensions provides a function to set the content
-// type for relationship parts and the main document part.
-func (f *File) setContentTypePartProjectExtensions(contentType string) error {
-	var ok bool
-	content, err := f.contentTypesReader()
-	if err != nil {
-		return err
-	}
-	content.mu.Lock()
-	defer content.mu.Unlock()
-	for _, v := range content.Defaults {
-		if v.Extension == "bin" {
-			ok = true
-		}
-	}
-	for idx, o := range content.Overrides {
-		if o.PartName == "/xl/workbook.xml" {
-			content.Overrides[idx].ContentType = contentType
-		}
-	}
-	if !ok {
-		content.Defaults = append(content.Defaults, xlsxDefault{
-			Extension:   "bin",
-			ContentType: ContentTypeVBA,
-		})
-	}
-	return err
 }
 
 // metadataReader provides a function to get the pointer to the structure

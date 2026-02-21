@@ -187,21 +187,6 @@ const (
 	TotalRows            = 1048576
 	TotalSheetHyperlinks = 65529
 	UnzipSizeLimit       = 1000 << 24
-	// pivotTableVersion should be greater than 3. One or more of the
-	// PivotTables chosen are created in a version of Excel earlier than
-	// Excel 2007 or in compatibility mode. Slicer can only be used with
-	// PivotTables created in Excel 2007 or a newer version of Excel.
-	pivotTableVersion           = 3
-	pivotTableRefreshedVersion  = 8
-	defaultDrawingScale         = 1.0
-	defaultChartDimensionWidth  = 480
-	defaultChartDimensionHeight = 260
-	defaultSlicerWidth          = 200
-	defaultSlicerHeight         = 200
-	defaultChartLegendPosition  = "bottom"
-	defaultChartShowBlanksAs    = "gap"
-	defaultShapeSize            = 160
-	defaultShapeLineWidth       = 1
 )
 
 // ColorMappingType is the type of color transformation.
@@ -223,69 +208,6 @@ const (
 	ColorMappingTypeFollowedHyperlink
 	ColorMappingTypeUnset int = -1
 )
-
-// ChartDataLabelPositionType is the type of chart data labels position.
-type ChartDataLabelPositionType byte
-
-// Chart data labels positions types enumeration.
-const (
-	ChartDataLabelsPositionUnset ChartDataLabelPositionType = iota
-	ChartDataLabelsPositionBestFit
-	ChartDataLabelsPositionBelow
-	ChartDataLabelsPositionCenter
-	ChartDataLabelsPositionInsideBase
-	ChartDataLabelsPositionInsideEnd
-	ChartDataLabelsPositionLeft
-	ChartDataLabelsPositionOutsideEnd
-	ChartDataLabelsPositionRight
-	ChartDataLabelsPositionAbove
-)
-
-// chartDataLabelsPositionTypes defined supported chart data labels position
-// types.
-var chartDataLabelsPositionTypes = map[ChartDataLabelPositionType]string{
-	ChartDataLabelsPositionBestFit:    "bestFit",
-	ChartDataLabelsPositionBelow:      "b",
-	ChartDataLabelsPositionCenter:     "ctr",
-	ChartDataLabelsPositionInsideBase: "inBase",
-	ChartDataLabelsPositionInsideEnd:  "inEnd",
-	ChartDataLabelsPositionLeft:       "l",
-	ChartDataLabelsPositionOutsideEnd: "outEnd",
-	ChartDataLabelsPositionRight:      "r",
-	ChartDataLabelsPositionAbove:      "t",
-}
-
-// chartDashTypes defined supported preset chart dash types.
-var chartDashTypes = map[ChartDashType]string{
-	ChartDashSolid:         "solid",
-	ChartDashDot:           "dot",
-	ChartDashDash:          "dash",
-	ChartDashLgDash:        "lgDash",
-	ChartDashSashDot:       "dashDot",
-	ChartDashLgDashDot:     "lgDashDot",
-	ChartDashLgDashDotDot:  "lgDashDotDot",
-	ChartDashSysDash:       "sysDash",
-	ChartDashSysDot:        "sysDot",
-	ChartDashSysDashDot:    "sysDashDot",
-	ChartDashSysDashDotDot: "sysDashDotDot",
-}
-
-// supportedChartDataLabelsPosition defined supported chart data labels position
-// types for each type of chart.
-var supportedChartDataLabelsPosition = map[ChartType][]ChartDataLabelPositionType{
-	Bar:               {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd, ChartDataLabelsPositionOutsideEnd},
-	BarStacked:        {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd},
-	BarPercentStacked: {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd},
-	Col:               {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd, ChartDataLabelsPositionOutsideEnd},
-	ColStacked:        {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd},
-	ColPercentStacked: {ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideBase, ChartDataLabelsPositionInsideEnd},
-	Line:              {ChartDataLabelsPositionBelow, ChartDataLabelsPositionCenter, ChartDataLabelsPositionLeft, ChartDataLabelsPositionRight, ChartDataLabelsPositionAbove},
-	Pie:               {ChartDataLabelsPositionBestFit, ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideEnd, ChartDataLabelsPositionOutsideEnd},
-	Pie3D:             {ChartDataLabelsPositionBestFit, ChartDataLabelsPositionCenter, ChartDataLabelsPositionInsideEnd, ChartDataLabelsPositionOutsideEnd},
-	Scatter:           {ChartDataLabelsPositionBelow, ChartDataLabelsPositionCenter, ChartDataLabelsPositionLeft, ChartDataLabelsPositionRight, ChartDataLabelsPositionAbove},
-	Bubble:            {ChartDataLabelsPositionBelow, ChartDataLabelsPositionCenter, ChartDataLabelsPositionLeft, ChartDataLabelsPositionRight, ChartDataLabelsPositionAbove},
-	Bubble3D:          {ChartDataLabelsPositionBelow, ChartDataLabelsPositionCenter, ChartDataLabelsPositionLeft, ChartDataLabelsPositionRight, ChartDataLabelsPositionAbove},
-}
 
 const (
 	defaultTempFileSST                    = "sharedStrings"
@@ -489,14 +411,6 @@ var supportedDefinedNameAfterStartCharCodeRange = []int{
 	65482, 65487, 65490, 65495, 65498, 65500, 65504, 65510, 65512, 65518, 65529, 65533,
 }
 
-// supportedImageTypes defined supported image types.
-var supportedImageTypes = map[string]string{
-	".bmp": ".bmp", ".emf": ".emf", ".emz": ".emz", ".gif": ".gif",
-	".ico": ".ico", ".jpeg": ".jpeg", ".jpg": ".jpeg", ".png": ".png",
-	".svg": ".svg", ".tif": ".tiff", ".tiff": ".tiff", ".wmf": ".wmf",
-	".wmz": ".wmz",
-}
-
 // supportedCalcMode defined supported formula calculate mode.
 var supportedCalcMode = []string{"manual", "auto", "autoNoTable"}
 
@@ -514,20 +428,6 @@ var supportedContentTypes = map[string]string{
 
 // supportedUnderlineTypes defined supported underline types.
 var supportedUnderlineTypes = []string{"none", "single", "double"}
-
-// supportedDrawingUnderlineTypes defined supported underline types in drawing
-// markup language.
-var supportedDrawingUnderlineTypes = []string{
-	"none", "words", "sng", "dbl", "heavy", "dotted", "dottedHeavy", "dash", "dashHeavy", "dashLong", "dashLongHeavy", "dotDash", "dotDashHeavy", "dotDotDash", "dotDotDashHeavy", "wavy", "wavyHeavy",
-	"wavyDbl",
-}
-
-// supportedDrawingTextVerticalType defined supported text vertical types in
-// drawing markup language.
-var supportedDrawingTextVerticalType = []string{"horz", "vert", "vert270", "wordArtVert", "eaVert", "mongolianVert", "wordArtVertRtl"}
-
-// supportedPositioning defined supported positioning types.
-var supportedPositioning = []string{"absolute", "oneCell", "twoCell"}
 
 // supportedPageOrientation defined supported page setup page orientation.
 var supportedPageOrientation = []string{"portrait", "landscape"}

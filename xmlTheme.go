@@ -13,6 +13,14 @@ package excelize
 
 import "encoding/xml"
 
+// xlsxCTTextFont directly maps the a:latin, a:ea, and a:cs elements.
+type xlsxCTTextFont struct {
+	Typeface    string `xml:"typeface,attr"`
+	Panose      string `xml:"panose,attr,omitempty"`
+	PitchFamily string `xml:"pitchFamily,attr,omitempty"`
+	Charset     string `xml:"Charset,attr,omitempty"`
+}
+
 // xlsxTheme directly maps the theme element in the namespace
 // http://schemas.openxmlformats.org/drawingml/2006/main
 type xlsxTheme struct {

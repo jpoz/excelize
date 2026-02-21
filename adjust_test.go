@@ -1,13 +1,10 @@
 package excelize
 
 import (
-	"encoding/xml"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	_ "image/jpeg"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -944,11 +941,6 @@ func TestAdjustFormula(t *testing.T) {
 			assert.Equal(t, preset[3], formula)
 		}
 	})
-	t.Run("for_cross_sheet_ref_with_chart_sheet)", func(t *testing.T) {
-		assert.NoError(t, f.AddChartSheet("Chart1", &Chart{Type: Line}))
-		assert.NoError(t, f.InsertRows("Sheet1", 2, 1))
-		assert.NoError(t, f.InsertCols("Sheet1", "A", 1))
-	})
 	t.Run("for_array_formula_cell", func(t *testing.T) {
 		f := NewFile()
 		assert.NoError(t, f.SetSheetRow("Sheet1", "A1", &[]int{1, 2}))
@@ -1091,7 +1083,6 @@ func TestAdjustDataValidations(t *testing.T) {
 	dv.SetSqrefDropList("$F$2:$F$3")
 	assert.NoError(t, f.AddDataValidation("Sheet1", dv))
 
-	assert.NoError(t, f.AddChartSheet("Chart1", &Chart{Type: Line}))
 	_, err = f.NewSheet("Sheet2")
 	assert.NoError(t, err)
 	assert.NoError(t, f.SetSheetRow("Sheet2", "C1", &[]interface{}{1, 10}))
@@ -1189,89 +1180,6 @@ func TestAdjustDataValidations(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "B5:C6", dvs[0].Sqref) // Adjusted range
 	})
-}
-
-func TestAdjustDrawings(t *testing.T) {
-	f := NewFile()
-	// Test add pictures to sheet with positioning
-	assert.NoError(t, f.AddPicture("Sheet1", "B2", filepath.Join("test", "images", "excel.jpg"), nil))
-	assert.NoError(t, f.AddPicture("Sheet1", "B11", filepath.Join("test", "images", "excel.jpg"), &GraphicOptions{Positioning: "oneCell"}))
-	assert.NoError(t, f.AddPicture("Sheet1", "B21", filepath.Join("test", "images", "excel.jpg"), &GraphicOptions{Positioning: "absolute"}))
-
-	// Test adjust pictures on inserting columns and rows
-	assert.NoError(t, f.InsertCols("Sheet1", "A", 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 1, 1))
-	assert.NoError(t, f.InsertCols("Sheet1", "C", 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 5, 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 15, 1))
-	cells, err := f.GetPictureCells("Sheet1")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"D3", "B21", "D13"}, cells)
-	wb := filepath.Join("test", "TestAdjustDrawings.xlsx")
-	assert.NoError(t, f.SaveAs(wb))
-
-	// Test adjust pictures on deleting columns and rows
-	assert.NoError(t, f.RemoveCol("Sheet1", "A"))
-	assert.NoError(t, f.RemoveRow("Sheet1", 1))
-	cells, err = f.GetPictureCells("Sheet1")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"C2", "B21", "C12"}, cells)
-
-	// Test adjust existing pictures on inserting columns and rows
-	f, err = OpenFile(wb)
-	assert.NoError(t, err)
-	assert.NoError(t, f.InsertCols("Sheet1", "A", 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 1, 1))
-	assert.NoError(t, f.InsertCols("Sheet1", "D", 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 5, 1))
-	assert.NoError(t, f.InsertRows("Sheet1", 16, 1))
-	cells, err = f.GetPictureCells("Sheet1")
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"F4", "B21", "F15"}, cells)
-
-	// Test adjust drawings with unsupported charset
-	f, err = OpenFile(wb)
-	assert.NoError(t, err)
-	f.Pkg.Store("xl/drawings/drawing1.xml", MacintoshCyrillicCharset)
-	assert.EqualError(t, f.InsertCols("Sheet1", "A", 1), "XML syntax error on line 1: invalid UTF-8")
-
-	errors := []error{ErrColumnNumber, ErrColumnNumber, ErrMaxRows, ErrMaxRows}
-	cells = []string{"XFD1", "XFB1"}
-	for i, cell := range cells {
-		f = NewFile()
-		assert.NoError(t, f.AddPicture("Sheet1", cell, filepath.Join("test", "images", "excel.jpg"), nil))
-		assert.Equal(t, errors[i], f.InsertCols("Sheet1", "A", 1))
-		assert.NoError(t, f.SaveAs(wb))
-		f, err = OpenFile(wb)
-		assert.NoError(t, err)
-		assert.Equal(t, errors[i], f.InsertCols("Sheet1", "A", 1))
-	}
-	errors = []error{ErrMaxRows, ErrMaxRows}
-	cells = []string{"A1048576", "A1048570"}
-	for i, cell := range cells {
-		f = NewFile()
-		assert.NoError(t, f.AddPicture("Sheet1", cell, filepath.Join("test", "images", "excel.jpg"), nil))
-		assert.Equal(t, errors[i], f.InsertRows("Sheet1", 1, 1))
-		assert.NoError(t, f.SaveAs(wb))
-		f, err = OpenFile(wb)
-		assert.NoError(t, err)
-		assert.Equal(t, errors[i], f.InsertRows("Sheet1", 1, 1))
-	}
-
-	a := xdrCellAnchor{}
-	assert.NoError(t, a.adjustDrawings(columns, 0, 0))
-	p := xlsxCellAnchorPos{}
-	assert.NoError(t, p.adjustDrawings(columns, 0, 0, ""))
-
-	f, err = OpenFile(wb)
-	assert.NoError(t, err)
-	f.Pkg.Store("xl/drawings/drawing1.xml", []byte(xml.Header+`<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><twoCellAnchor><from><col>0</col><colOff>0</colOff><row>0</row><rowOff>0</rowOff></from><to><col>1</col><colOff>0</colOff><row>1</row><rowOff>0</rowOff></to><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"></mc:AlternateContent><clientData/></twoCellAnchor></wsDr>`))
-	assert.NoError(t, f.InsertCols("Sheet1", "A", 1))
-
-	f, err = OpenFile(wb)
-	assert.NoError(t, err)
-	f.Pkg.Store("xl/drawings/drawing1.xml", []byte(xml.Header+fmt.Sprintf(`<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><oneCellAnchor><from><col>%d</col><row>0</row></from><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"></mc:AlternateContent><clientData/></oneCellAnchor></wsDr>`, MaxColumns)))
-	assert.EqualError(t, f.InsertCols("Sheet1", "A", 1), "the column number must be greater than or equal to 1 and less than or equal to 16384")
 }
 
 func TestAdjustDefinedNames(t *testing.T) {

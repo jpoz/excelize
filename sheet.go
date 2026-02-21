@@ -16,8 +16,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -525,47 +523,6 @@ func (f *File) getSheetXMLPath(sheet string) (string, bool) {
 		}
 	}
 	return name, ok
-}
-
-// SetSheetBackground provides a function to set background picture by given
-// worksheet name and file path. Supported image types: BMP, EMF, EMZ, GIF, ICO,
-// JPEG, JPG, PNG, SVG, TIF, TIFF, WMF, and WMZ.
-func (f *File) SetSheetBackground(sheet, picture string) error {
-	var err error
-	// Check picture exists first.
-	if _, err = os.Stat(picture); os.IsNotExist(err) {
-		return err
-	}
-	file, _ := os.ReadFile(filepath.Clean(picture))
-	return f.setSheetBackground(sheet, path.Ext(picture), file)
-}
-
-// SetSheetBackgroundFromBytes provides a function to set background picture by
-// given worksheet name, extension name and image data. Supported image types:
-// BMP, EMF, EMZ, GIF, ICO, JPEG, JPG, PNG, SVG, TIF, TIFF, WMF, and WMZ.
-func (f *File) SetSheetBackgroundFromBytes(sheet, extension string, picture []byte) error {
-	if len(picture) == 0 {
-		return ErrParameterInvalid
-	}
-	return f.setSheetBackground(sheet, extension, picture)
-}
-
-// setSheetBackground provides a function to set background picture by given
-// worksheet name, file name extension and image data.
-func (f *File) setSheetBackground(sheet, extension string, file []byte) error {
-	imageType, ok := supportedImageTypes[strings.ToLower(extension)]
-	if !ok {
-		return ErrImgExt
-	}
-	name := f.addMedia(file, imageType)
-	sheetXMLPath, _ := f.getSheetXMLPath(sheet)
-	sheetRels := "xl/worksheets/_rels/" + strings.TrimPrefix(sheetXMLPath, "xl/worksheets/") + ".rels"
-	rID := f.addRels(sheetRels, SourceRelationshipImage, strings.Replace(name, "xl", "..", 1), "")
-	if err := f.addSheetPicture(sheet, rID); err != nil {
-		return err
-	}
-	f.addSheetNameSpace(sheet, SourceRelationship)
-	return f.setContentTypePartImageExtensions()
 }
 
 // DeleteSheet provides a function to delete worksheet in a workbook by given

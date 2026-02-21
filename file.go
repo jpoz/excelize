@@ -117,12 +117,8 @@ func (f *File) WriteTo(w io.Writer, opts ...Options) (int64, error) {
 		f.options = &opts[i]
 	}
 	if len(f.Path) != 0 {
-		contentType, ok := supportedContentTypes[strings.ToLower(filepath.Ext(f.Path))]
-		if !ok {
+		if _, ok := supportedContentTypes[strings.ToLower(filepath.Ext(f.Path))]; !ok {
 			return 0, ErrWorkbookFileFormat
-		}
-		if err := f.setContentTypePartProjectExtensions(contentType); err != nil {
-			return 0, err
 		}
 	}
 	buf, err := f.WriteToBuffer()
@@ -146,25 +142,14 @@ func (f *File) WriteToBuffer() (*bytes.Buffer, error) {
 		return buf, err
 	}
 	f.writeZip64LFH(buf)
-	if f.options != nil && f.options.Password != "" {
-		b, err := Encrypt(buf.Bytes(), f.options)
-		if err != nil {
-			return buf, err
-		}
-		buf.Reset()
-		buf.Write(b)
-	}
 	return buf, nil
 }
 
 // writeToZip provides a function to write to ZipWriter.
 func (f *File) writeToZip(zw ZipWriter) error {
 	f.calcChainWriter()
-	f.commentsWriter()
 	f.contentTypesWriter()
-	f.drawingsWriter()
 	f.volatileDepsWriter()
-	f.vmlDrawingWriter()
 	f.workBookWriter()
 	f.workSheetWriter()
 	f.relsWriter()

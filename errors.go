@@ -66,9 +66,6 @@ var (
 	ErrFormControlValue = fmt.Errorf("scroll value must be an integer from 0 to %d", MaxFormControlValue)
 	// ErrGroupSheets defined the error message on group sheets.
 	ErrGroupSheets = errors.New("group worksheet must contain an active worksheet")
-	// ErrImgExt defined the error message on receive an unsupported image
-	// extension.
-	ErrImgExt = errors.New("unsupported image extension")
 	// ErrInvalidFormula defined the error message on receive an invalid
 	// formula.
 	ErrInvalidFormula = errors.New("formula not valid")
@@ -101,9 +98,6 @@ var (
 	// ErrPasswordLengthInvalid defined the error message on invalid password
 	// length.
 	ErrPasswordLengthInvalid = errors.New("password length invalid")
-	// ErrPivotTableClassicLayout defined the error message on enable
-	// ClassicLayout and CompactData in the same time.
-	ErrPivotTableClassicLayout = errors.New("cannot enable ClassicLayout and CompactData in the same time")
 	// ErrSave defined the error message for saving file.
 	ErrSave = errors.New("no path defined for file, consider File.WriteTo or File.Write")
 	// ErrSheetIdx defined the error message on receive the invalid worksheet
@@ -121,21 +115,6 @@ var (
 	// ErrSheetNameSingleQuote defined the error message on the first or last
 	// character of the sheet name was a single quote.
 	ErrSheetNameSingleQuote = errors.New("the first or last character of the sheet name can not be a single quote")
-	// ErrSparkline defined the error message on receive the invalid sparkline
-	// parameters.
-	ErrSparkline = errors.New("must have the same number of 'Location' and 'Range' parameters")
-	// ErrSparklineLocation defined the error message on missing Location
-	// parameters
-	ErrSparklineLocation = errors.New("parameter 'Location' is required")
-	// ErrSparklineRange defined the error message on missing sparkline Range
-	// parameters
-	ErrSparklineRange = errors.New("parameter 'Range' is required")
-	// ErrSparklineStyle defined the error message on receive the invalid
-	// sparkline Style parameters.
-	ErrSparklineStyle = errors.New("parameter 'Style' value must be an integer from 0 to 35")
-	// ErrSparklineType defined the error message on receive the invalid
-	// sparkline Type parameters.
-	ErrSparklineType = errors.New("parameter 'Type' value must be one of 'line', 'column' or 'win_loss'")
 	// ErrStreamSetColStyle defined the error message on set column style in
 	// stream writing mode.
 	ErrStreamSetColStyle = errors.New("must call the SetColStyle function before the SetRow function")
@@ -148,12 +127,6 @@ var (
 	// ErrTotalSheetHyperlinks defined the error message on hyperlinks count
 	// overflow.
 	ErrTotalSheetHyperlinks = errors.New("over maximum limit hyperlinks in a worksheet")
-	// ErrTransparency defined the error message for receiving a transparency
-	// value exceeds limit.
-	ErrTransparency = errors.New("transparency value must be an integer from 0 to 100")
-	// ErrUnknownEncryptMechanism defined the error message on unsupported
-	// encryption mechanism.
-	ErrUnknownEncryptMechanism = errors.New("unknown encryption mechanism")
 	// ErrUnprotectSheet defined the error message on worksheet has set no
 	// protection.
 	ErrUnprotectSheet = errors.New("worksheet has set no protect")
@@ -166,9 +139,6 @@ var (
 	// ErrUnprotectWorkbookPassword defined the error message on remove workbook
 	// protection with password verification failed.
 	ErrUnprotectWorkbookPassword = errors.New("workbook protect password not match")
-	// ErrUnsupportedEncryptMechanism defined the error message on unsupported
-	// encryption mechanism.
-	ErrUnsupportedEncryptMechanism = errors.New("unsupported encryption mechanism")
 	// ErrUnsupportedHashAlgorithm defined the error message on unsupported
 	// hash algorithm.
 	ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm")
@@ -191,12 +161,6 @@ type ErrSheetNotExist struct {
 // Error returns the error message on receiving the non existing sheet name.
 func (err ErrSheetNotExist) Error() string {
 	return fmt.Sprintf("sheet %s does not exist", err.SheetName)
-}
-
-// newAddCommentError defined the error message on the comment already exist in
-// the cell.
-func newAddCommentError(cell string) error {
-	return fmt.Errorf("comment already exist on cell %s", cell)
 }
 
 // newCellNameToCoordinatesError defined the error message on converts
@@ -277,22 +241,10 @@ func newInvalidRowNumberError(row int) error {
 	return fmt.Errorf("invalid row number %d", row)
 }
 
-// newInvalidSlicerNameError defined the error message on receiving the invalid
-// slicer name.
-func newInvalidSlicerNameError(name string) error {
-	return fmt.Errorf("invalid slicer name %q", name)
-}
-
 // newInvalidStyleID defined the error message on receiving the invalid style
 // ID.
 func newInvalidStyleID(styleID int) error {
 	return fmt.Errorf("invalid style ID %d", styleID)
-}
-
-// newNoExistSlicerError defined the error message on receiving the non existing
-// slicer name.
-func newNoExistSlicerError(name string) error {
-	return fmt.Errorf("slicer %s does not exist", name)
 }
 
 // newNoExistTableError defined the error message on receiving the non existing
@@ -307,18 +259,6 @@ func newNotWorksheetError(name string) error {
 	return fmt.Errorf("sheet %s is not a worksheet", name)
 }
 
-// newPivotTableDataRangeError defined the error message on receiving the
-// invalid pivot table data range.
-func newPivotTableDataRangeError(msg string) error {
-	return fmt.Errorf("parameter 'DataRange' parsing error: %s", msg)
-}
-
-// newPivotTableRangeError defined the error message on receiving the invalid
-// pivot table range.
-func newPivotTableRangeError(msg string) error {
-	return fmt.Errorf("parameter 'PivotTableRange' parsing error: %s", msg)
-}
-
 // newStreamSetRowError defined the error message on the stream writer
 // receiving the non-ascending row number.
 func newStreamSetRowError(row int) error {
@@ -329,18 +269,6 @@ func newStreamSetRowError(row int) error {
 // filter operator token.
 func newUnknownFilterTokenError(token string) error {
 	return fmt.Errorf("unknown operator: %s", token)
-}
-
-// newUnsupportedChartType defined the error message on receiving the chart
-// type are unsupported.
-func newUnsupportedChartType(chartType ChartType) error {
-	return fmt.Errorf("unsupported chart type %d", chartType)
-}
-
-// newUnsupportedPivotCacheSourceType defined the error message on receiving the
-// source type of pivot table cache.
-func newUnsupportedPivotCacheSourceType(sourceType string) error {
-	return fmt.Errorf("unsupported pivot table cache source type: %s", sourceType)
 }
 
 // newUnzipSizeLimitError defined the error message on unzip size exceeds the

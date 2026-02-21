@@ -45,20 +45,6 @@ func TestConcurrency(t *testing.T) {
 			// Concurrency get cell style
 			_, err = f.GetCellStyle("Sheet1", "A3")
 			assert.NoError(t, err)
-			// Concurrency add picture
-			assert.NoError(t, f.AddPicture("Sheet1", "F21", filepath.Join("test", "images", "excel.jpg"),
-				&GraphicOptions{
-					OffsetX:       10,
-					OffsetY:       10,
-					Hyperlink:     "https://github.com/xuri/excelize",
-					HyperlinkType: "External",
-					Positioning:   "oneCell",
-				},
-			))
-			// Concurrency get cell picture
-			pics, err := f.GetPictures("Sheet1", "A1")
-			assert.Len(t, pics, 0)
-			assert.NoError(t, err)
 			// Concurrency iterate rows
 			rows, err := f.Rows("Sheet1")
 			assert.NoError(t, err)
@@ -616,12 +602,11 @@ func TestGetCellFormula(t *testing.T) {
 
 	// Test get array formula with invalid cell range reference
 	f = NewFile()
-	assert.NoError(t, f.AddChartSheet("Chart1", &Chart{Type: Line}))
 	_, err = f.NewSheet("Sheet2")
 	assert.NoError(t, err)
 	formulaType, ref := STCellFormulaTypeArray, "B1:B2"
 	assert.NoError(t, f.SetCellFormula("Sheet2", "B1", "A1:B2", FormulaOpts{Ref: &ref, Type: &formulaType}))
-	ws, ok := f.Sheet.Load("xl/worksheets/sheet3.xml")
+	ws, ok := f.Sheet.Load("xl/worksheets/sheet2.xml")
 	assert.True(t, ok)
 	ws.(*xlsxWorksheet).SheetData.Row[0].C[1].F.Ref = ":"
 	_, err = f.getCellFormula("Sheet2", "A1", true)
