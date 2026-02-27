@@ -8098,6 +8098,8 @@ func TestArrayBroadcastHelpers(t *testing.T) {
 			// Mixed type comparisons (numbers sort before strings)
 			{"number_before_string", newNumberFormulaArg(100.0), newStringFormulaArg("1"), -1},
 			{"string_after_number", newStringFormulaArg("1"), newNumberFormulaArg(100.0), 1},
+			// Non-number/non-string types fallthrough to 0
+			{"empty_vs_empty", newEmptyFormulaArg(), newEmptyFormulaArg(), 0},
 		}
 
 		for _, tt := range tests {
