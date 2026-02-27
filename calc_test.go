@@ -6923,6 +6923,18 @@ func TestCalcImplicitIntersect(t *testing.T) {
 	result, err = f.CalcCellValue("Sheet1", "E3")
 	assert.NoError(t, err)
 	assert.Equal(t, "yes", result, "IF(D1:D3,...) in E3")
+
+	// Row index beyond matrix size: formula in B10 with A1:A5 range (only 5 rows)
+	// should fall through to return the original matrix arg unchanged
+	assert.NoError(t, f.SetCellFormula("Sheet1", "B10", "ABS(A1:A5)"))
+	_, err = f.CalcCellValue("Sheet1", "B10")
+	assert.NoError(t, err)
+
+	// implicitIntersect with invalid cell name returns arg unchanged
+	fn := formulaFuncs{cell: ""}
+	matrixArg := newMatrixFormulaArg([][]formulaArg{{newNumberFormulaArg(1)}})
+	got := fn.implicitIntersect(matrixArg)
+	assert.Equal(t, ArgMatrix, got.Type)
 }
 
 func TestCalcCriteriaRegexpAnchoring(t *testing.T) {
