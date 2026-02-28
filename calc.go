@@ -2200,14 +2200,7 @@ func formulaCriteriaEval(val formulaArg, criteria *formulaCriteria) (result bool
 			}
 		}
 	case criteriaRegexp:
-		pattern := criteria.Condition.Value()
-		if !strings.HasPrefix(pattern, "^") {
-			pattern = "^" + pattern
-		}
-		if !strings.HasSuffix(pattern, "$") {
-			pattern = pattern + "$"
-		}
-		return regexp.MatchString(pattern, val.Value())
+		return regexp.MatchString(criteria.Condition.Value(), val.Value())
 	}
 	return
 }

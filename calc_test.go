@@ -4930,6 +4930,23 @@ func TestCalcRangeInFunctionInfixOp(t *testing.T) {
 		assert.NoError(t, err, tt.formula+" in "+tt.cell)
 		assert.Equal(t, tt.expected, result, tt.formula+" in "+tt.cell)
 	}
+
+	// Test defined name used as range operand in infix expression within a function
+	assert.NoError(t, f.SetDefinedName(&DefinedName{
+		Name: "Categories", RefersTo: "Sheet1!A:A", Scope: "Workbook",
+	}))
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H1", `IF(Categories="TRANSFER",B:B)`))
+	result, err := f.CalcCellValue("Sheet1", "H1")
+	assert.NoError(t, err)
+	assert.Equal(t, "100", result)
+
+	// Test error path: defined name resolving to invalid reference in infix context
+	assert.NoError(t, f.SetDefinedName(&DefinedName{
+		Name: "BadRef", RefersTo: "NonExistentSheet!A:A", Scope: "Workbook",
+	}))
+	assert.NoError(t, f.SetCellFormula("Sheet1", "H2", `IF(BadRef="TRANSFER",B:B)`))
+	_, err = f.CalcCellValue("Sheet1", "H2")
+	assert.Error(t, err)
 }
 
 func TestCalcISBLANK(t *testing.T) {
